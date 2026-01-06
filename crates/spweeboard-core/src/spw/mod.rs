@@ -24,7 +24,7 @@ mod parser;
 pub use symbol::Symbol;
 pub use token::{Token, TokenKind};
 pub use lexer::Lexer;
-pub use ast::{Expression, Node, Bracket, BracketKind};
+pub use ast::{ArrowDir, Expression, Node, Bracket, BracketKind};
 pub use parser::{Parser, ParseError};
 
 /// Parses a SPW string into an expression tree.

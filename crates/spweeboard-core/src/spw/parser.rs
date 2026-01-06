@@ -1,6 +1,6 @@
 //! Parser for SPW expressions.
 
-use crate::spw::ast::{Bracket, BracketKind, Expression, Node};
+use crate::spw::ast::{ArrowDir, Bracket, BracketKind, Expression, Node};
 use crate::spw::token::{BracketType, Span, Token, TokenKind};
 use smallvec::SmallVec;
 use thiserror::Error;
@@ -161,6 +161,16 @@ impl<'tok> Parser<'tok> {
                     nodes.push(Node::String(string));
                 }
 
+                TokenKind::ArrowRight => {
+                    self.advance();
+                    nodes.push(Node::Arrow(ArrowDir::Right));
+                }
+
+                TokenKind::ArrowLeft => {
+                    self.advance();
+                    nodes.push(Node::Arrow(ArrowDir::Left));
+                }
+
                 TokenKind::Comma => {
                     // Start collecting a sequence
                     let first = Expression::from_nodes(nodes);
@@ -242,6 +252,14 @@ impl<'tok> Parser<'tok> {
                     let string = s.clone();
                     self.advance();
                     nodes.push(Node::String(string));
+                }
+                TokenKind::ArrowRight => {
+                    self.advance();
+                    nodes.push(Node::Arrow(ArrowDir::Right));
+                }
+                TokenKind::ArrowLeft => {
+                    self.advance();
+                    nodes.push(Node::Arrow(ArrowDir::Left));
                 }
                 TokenKind::OpenBracket(bt) => {
                     let bracket_type = *bt;

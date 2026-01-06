@@ -65,6 +65,18 @@ impl std::fmt::Display for Expression {
     }
 }
 
+/// Arrow direction in SPW.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+pub enum ArrowDir {
+    /// `->` — Right arrow (flow, causation, transformation)
+    #[display("->")]
+    Right,
+
+    /// `<-` — Left arrow (origin, source, derivation)
+    #[display("<-")]
+    Left,
+}
+
 /// A node in the SPW expression tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 pub enum Node {
@@ -87,6 +99,10 @@ pub enum Node {
     /// A sequence separated by commas (e.g., `[Henry, Worcester]`).
     #[display("seq")]
     Sequence(Vec<Expression>),
+
+    /// An arrow (`->` or `<-`).
+    #[display("{_0}")]
+    Arrow(ArrowDir),
 }
 
 impl Node {
@@ -109,6 +125,10 @@ impl Node {
                     out.push_str(&expr.render());
                 }
             }
+            Self::Arrow(dir) => match dir {
+                ArrowDir::Right => out.push_str("->"),
+                ArrowDir::Left => out.push_str("<-"),
+            },
         }
     }
 }

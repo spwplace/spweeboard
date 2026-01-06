@@ -4,17 +4,23 @@ use crate::ground::Ground;
 use crate::spw::Expression;
 use tracing::{trace, debug, instrument};
 
+/// Default prompt template loaded from prompt.txt at compile time.
+const DEFAULT_PROMPT_TEMPLATE: &str = include_str!("prompt.txt");
+
 /// Compiles SPW expressions into LLM prompts with in-context learning.
 #[derive(Debug, Clone)]
 pub struct PromptCompiler {
     /// Whether to include the full example bank (for debugging/testing).
     include_examples: bool,
+    /// The prompt template (system instruction + examples).
+    template: String,
 }
 
 impl Default for PromptCompiler {
     fn default() -> Self {
         Self {
             include_examples: true,
+            template: DEFAULT_PROMPT_TEMPLATE.to_string(),
         }
     }
 }
@@ -22,10 +28,32 @@ impl Default for PromptCompiler {
 impl PromptCompiler {
     /// Creates a compiler with examples disabled (shorter prompts).
     #[must_use]
-    pub const fn minimal() -> Self {
+    pub fn minimal() -> Self {
         Self {
             include_examples: false,
+            template: DEFAULT_PROMPT_TEMPLATE.to_string(),
         }
+    }
+
+    /// Creates a compiler with a custom prompt template.
+    #[must_use]
+    pub fn with_template(template: String) -> Self {
+        Self {
+            include_examples: true,
+            template,
+        }
+    }
+
+    /// Updates the prompt template at runtime.
+    pub fn set_template(&mut self, template: String) {
+        debug!(template_len = template.len(), "Updating prompt template");
+        self.template = template;
+    }
+
+    /// Returns the current prompt template.
+    #[must_use]
+    pub fn template(&self) -> &str {
+        &self.template
     }
 
     /// Compiles an expression with optional ground into a prompt.
@@ -38,14 +66,16 @@ impl PromptCompiler {
         let mut prompt = String::with_capacity(2048);
 
         // System instruction
-        prompt.push_str(system_instruction());
+        prompt.push_str(self.system_instruction());
         trace!("Added system instruction");
 
         // In-context learning examples
         if self.include_examples {
-            prompt.push_str("\n\n");
-            prompt.push_str(examples());
-            trace!("Added ICL examples");
+            if let Some(examples) = self.examples() {
+                prompt.push_str("\n\n");
+                prompt.push_str(examples);
+                trace!("Added ICL examples");
+            }
         }
 
         // Ground context
@@ -60,19 +90,16 @@ impl PromptCompiler {
         debug!(prompt_len = prompt.len(), "Prompt compiled");
         prompt
     }
-}
 
-/// Full prompt template loaded from prompt.txt - edit that file to change the prompt.
-const PROMPT_TEMPLATE: &str = include_str!("prompt.txt");
+    /// System instruction (everything before ---EXAMPLES---).
+    fn system_instruction(&self) -> &str {
+        self.template.split("---EXAMPLES---").next().unwrap_or(&self.template).trim()
+    }
 
-/// System instruction (everything before ---EXAMPLES---).
-fn system_instruction() -> &'static str {
-    PROMPT_TEMPLATE.split("---EXAMPLES---").next().unwrap().trim()
-}
-
-/// In-context learning examples (everything after ---EXAMPLES---).
-fn examples() -> &'static str {
-    PROMPT_TEMPLATE.split("---EXAMPLES---").nth(1).unwrap().trim()
+    /// In-context learning examples (everything after ---EXAMPLES---).
+    fn examples(&self) -> Option<&str> {
+        self.template.split("---EXAMPLES---").nth(1).map(|s| s.trim())
+    }
 }
 
 #[cfg(test)]

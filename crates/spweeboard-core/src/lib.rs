@@ -16,12 +16,13 @@ pub mod compiler;
 pub mod inference;
 pub mod buffer;
 
+pub use compiler::PromptCompiler;
+
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
 use crate::spw::Expression;
 use crate::ground::Ground;
-use crate::compiler::PromptCompiler;
 use crate::inference::InferenceEngine;
 use crate::buffer::ExpressionBuffer;
 use tracing::{trace, debug, info, instrument};
@@ -45,6 +46,29 @@ impl<I: InferenceEngine> SpweeboardEngine<I> {
             compiler: PromptCompiler::default(),
             inference,
         }
+    }
+
+    /// Creates a new engine with a custom prompt compiler.
+    #[instrument(skip(inference, compiler), level = "debug")]
+    pub fn with_compiler(inference: I, compiler: PromptCompiler) -> Self {
+        info!("Creating new SpweeboardEngine with custom compiler");
+        Self {
+            buffer: ExpressionBuffer::new(),
+            grounds: Vec::new(),
+            compiler,
+            inference,
+        }
+    }
+
+    /// Updates the prompt template at runtime.
+    pub fn set_prompt_template(&mut self, template: String) {
+        self.compiler.set_template(template);
+    }
+
+    /// Returns the current prompt template.
+    #[must_use]
+    pub fn prompt_template(&self) -> &str {
+        self.compiler.template()
     }
 
     /// Pushes a symbol or character to the current expression buffer.

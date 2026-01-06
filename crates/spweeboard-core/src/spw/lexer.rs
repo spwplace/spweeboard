@@ -125,7 +125,23 @@ impl<'src> Lexer<'src> {
             };
         }
 
-        // Opening brackets
+        // Check for `<-` arrow before treating `<` as bracket
+        if c == '<' {
+            if self.peek() == Some('-') {
+                self.advance(); // consume the '-'
+                return Token {
+                    kind: TokenKind::ArrowLeft,
+                    span: Span::new(start, self.position),
+                };
+            }
+            // It's a regular concept bracket
+            return Token {
+                kind: TokenKind::OpenBracket(BracketType::Concept),
+                span: Span::new(start, self.position),
+            };
+        }
+
+        // Opening brackets (excluding `<` which is handled above)
         if let Some(bracket) = BracketType::from_open(c) {
             return Token {
                 kind: TokenKind::OpenBracket(bracket),
@@ -151,6 +167,22 @@ impl<'src> Lexer<'src> {
                 kind: TokenKind::Semicolon,
                 span: Span::new(start, self.position),
             },
+            '-' => {
+                // Check for `->` arrow
+                if self.peek() == Some('>') {
+                    self.advance(); // consume the '>'
+                    Token {
+                        kind: TokenKind::ArrowRight,
+                        span: Span::new(start, self.position),
+                    }
+                } else {
+                    // Standalone `-` is unknown (could extend to handle as operator later)
+                    Token {
+                        kind: TokenKind::Unknown(c),
+                        span: Span::new(start, self.position),
+                    }
+                }
+            }
             _ if c.is_whitespace() => self.scan_whitespace(start),
             _ if c.is_alphabetic() || c == '_' => self.scan_ident(start),
             _ => Token {

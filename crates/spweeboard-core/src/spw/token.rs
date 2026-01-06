@@ -78,6 +78,14 @@ pub enum TokenKind {
     #[display(";")]
     Semicolon,
 
+    /// Right arrow `->` (flow, causation, transformation).
+    #[display("->")]
+    ArrowRight,
+
+    /// Left arrow `<-` (origin, source, derivation).
+    #[display("<-")]
+    ArrowLeft,
+
     /// End of input.
     #[display("EOF")]
     Eof,

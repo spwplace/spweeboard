@@ -1,1 +1,9 @@
 target/
+
+platforms/android/.gradle/
+platforms/android/app/build/
+platforms/android/build/
+platforms/android/gradle/wrapper/
+platforms/ios/Spweeboard/Generated/
+platforms/ios/Spweeboard/SpweeboardCore/
+platforms/android/app/src/main/jniLibs/arm64-v8a

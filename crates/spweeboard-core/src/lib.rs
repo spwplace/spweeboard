@@ -9,6 +9,7 @@
 //! - Platform-agnostic inference engine abstraction
 
 #![forbid(unsafe_code)]
+#![allow(missing_docs)]
 
 pub mod spw;
 pub mod ground;
@@ -16,7 +17,17 @@ pub mod compiler;
 pub mod inference;
 pub mod buffer;
 
+#[cfg(any(feature = "ipc-server", feature = "ipc-client"))]
+pub mod ipc;
+
+pub mod ffi;
+
 pub use compiler::PromptCompiler;
+pub use ffi::{
+    parse_spw, validate_spw, interpret_spw_simple,
+    SpwBuffer, SpwParseResult, SpwParseState,
+    SpwInferenceConfig, SpwInferenceResult, SpwEngineStatus, SpwInferenceEngine,
+};
 
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();

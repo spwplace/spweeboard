@@ -31,7 +31,21 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 uniffi = "0.28"
 
 # LLM (feature-gated per platform)
-# llama-cpp-2 = "0.1"
+llama-cpp-2 = "0.1"
+regex = "1"
+rand = "0.8"
+
+# IPC server (main app)
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+hyper = { version = "1", features = ["server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio-stream = "0.1"
+
+# IPC client (keyboard extension)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
 
 # Testing
 proptest = "1"

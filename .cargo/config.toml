@@ -1,0 +1,25 @@
+# Cargo configuration for cross-compilation
+# NDK path: darwin-x86_64 (Rosetta on Apple Silicon)
+
+[env]
+ANDROID_NDK_HOME = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066"
+
+[target.aarch64-linux-android]
+linker = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang"
+ar = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
+
+[target.aarch64-linux-android.env]
+CC_aarch64_linux_android = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang"
+CXX_aarch64_linux_android = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang++"
+
+[target.armv7-linux-androideabi]
+linker = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi26-clang"
+ar = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
+
+[target.i686-linux-android]
+linker = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/i686-linux-android26-clang"
+ar = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
+
+[target.x86_64-linux-android]
+linker = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/x86_64-linux-android26-clang"
+ar = "/Users/ember/Library/Android/sdk/ndk/29.0.13846066/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"

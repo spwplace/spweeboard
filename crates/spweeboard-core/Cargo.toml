@@ -12,9 +12,19 @@ name = "spweeboard_core"
 
 [features]
 default = []
-metal = []   # iOS Metal acceleration
-vulkan = []  # Android Vulkan acceleration
+llama = ["dep:llama-cpp-2", "dep:regex", "dep:rand"]
+metal = ["llama"]   # iOS Metal acceleration
+vulkan = ["llama"]  # Android Vulkan acceleration
 uniffi = ["dep:uniffi"]
+
+# IPC for keyboard ↔ app communication
+ipc-server = ["llama", "dep:axum", "dep:tower", "dep:tower-http", "dep:hyper", "dep:hyper-util", "dep:tokio-stream"]
+ipc-client = ["dep:reqwest", "dep:futures-util"]
+
+# Full main app (inference + server)
+app = ["ipc-server"]
+# Keyboard extension (client only, no LLM)
+keyboard = ["ipc-client"]
 
 [dependencies]
 thiserror.workspace = true
@@ -26,14 +36,36 @@ tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rusqlite.workspace = true
-uniffi = { workspace = true, optional = true }
+uniffi = { workspace = true, optional = true, features = ["cli"] }
 tracing = "0.1"
+
+# LLM inference (feature-gated)
+llama-cpp-2 = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+# IPC server (feature-gated)
+axum = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+
+# IPC client (feature-gated)
+reqwest = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
 
 [build-dependencies]
 uniffi = { workspace = true, features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["uniffi"]
 
 [lints]
 workspace = true

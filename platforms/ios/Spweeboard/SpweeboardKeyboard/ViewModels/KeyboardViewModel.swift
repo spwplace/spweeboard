@@ -1,14 +1,46 @@
 import Foundation
 import Combine
 
+// MARK: - Rust FFI Configuration
+
+/// Set to true when Rust library is linked to the project.
+/// The build script (build-rust.sh) generates the bindings.
+/// Until integration is complete, we use Swift fallback.
+private let useRustParser = false
+
+/// Parse state for SPW expression.
+enum ParseState {
+    case empty
+    case valid
+    case invalid
+}
+
+/// Available grounds for interpretation context.
+struct GroundOption: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let spw: String
+}
+
+let defaultGrounds: [GroundOption] = [
+    GroundOption(id: "none", name: "None", spw: ""),
+    GroundOption(id: "software", name: "Software", spw: ".{software}"),
+    GroundOption(id: "craft", name: "Craft", spw: "@[craft].{utility}"),
+    GroundOption(id: "poetry", name: "Poetry", spw: "@[poetry]~"),
+    GroundOption(id: "inquiry", name: "Inquiry", spw: "?{&@.}"),
+]
+
 /// View model for the keyboard, managing buffer state and LLM interaction.
 @MainActor
 final class KeyboardViewModel: ObservableObject {
     /// Current expression buffer (raw SPW text).
     @Published private(set) var buffer: String = ""
 
+    /// Parse state of the current expression.
+    @Published private(set) var parseState: ParseState = .empty
+
     /// LLM-generated preview of the interpreted expression.
-    @Published private(set) var preview: String?
+    @Published private(set) var interpretation: String?
 
     /// Whether inference is currently running.
     @Published private(set) var isGenerating: Bool = false
@@ -16,8 +48,8 @@ final class KeyboardViewModel: ObservableObject {
     /// History of committed expressions.
     @Published private(set) var history: [String] = []
 
-    /// Currently loaded ground context.
-    @Published var activeGround: Ground?
+    /// Currently selected ground context.
+    @Published var selectedGround: GroundOption = defaultGrounds[0]
 
     private var previewTask: Task<Void, Never>?
     private let debounceInterval: TimeInterval = 0.15
@@ -27,26 +59,27 @@ final class KeyboardViewModel: ObservableObject {
     /// Pushes a SPW symbol to the buffer.
     func pushSymbol(_ symbol: String) {
         buffer.append(symbol)
-        schedulePreview()
+        updateParseState()
     }
 
     /// Pushes a character (for QWERTY input).
     func pushCharacter(_ char: String) {
         buffer.append(char)
-        schedulePreview()
+        updateParseState()
     }
 
     /// Removes the last character from the buffer.
     func pop() {
         guard !buffer.isEmpty else { return }
         buffer.removeLast()
-        schedulePreview()
+        updateParseState()
     }
 
     /// Clears the entire buffer.
     func clear() {
         buffer = ""
-        preview = nil
+        parseState = .empty
+        interpretation = nil
         previewTask?.cancel()
     }
 
@@ -55,7 +88,8 @@ final class KeyboardViewModel: ObservableObject {
         guard !buffer.isEmpty else { return }
         history.append(buffer)
         buffer = ""
-        preview = nil
+        parseState = .empty
+        interpretation = nil
         previewTask?.cancel()
 
         // Trim history to last 100 entries
@@ -68,69 +102,135 @@ final class KeyboardViewModel: ObservableObject {
     func recall(at index: Int) {
         guard history.indices.contains(index) else { return }
         buffer = history[index]
-        schedulePreview()
+        updateParseState()
     }
 
-    // MARK: - LLM Preview
+    /// Selects a ground context and re-interprets.
+    func selectGround(_ ground: GroundOption) {
+        selectedGround = ground
+        if parseState == .valid {
+            interpretation = interpretSwift(buffer, ground: ground)
+        }
+    }
 
-    /// Schedules a debounced preview generation.
-    private func schedulePreview() {
-        previewTask?.cancel()
+    // MARK: - Parse State
 
+    /// Updates parse state based on current buffer.
+    private func updateParseState() {
         guard !buffer.isEmpty else {
-            preview = nil
+            parseState = .empty
+            interpretation = nil
             return
         }
 
-        previewTask = Task {
-            try? await Task.sleep(for: .milliseconds(Int(debounceInterval * 1000)))
+        // Validate SPW expression
+        // TODO: Enable Rust FFI when library is integrated
+        let isValid = validateSpwSwift(buffer)
 
-            guard !Task.isCancelled else { return }
-            await generatePreview()
+        parseState = isValid ? .valid : .invalid
+
+        if isValid {
+            interpretation = interpretSwift(buffer, ground: selectedGround)
+        } else {
+            interpretation = nil
         }
     }
 
-    /// Generates an LLM preview for the current buffer.
-    private func generatePreview() async {
-        isGenerating = true
-        defer { isGenerating = false }
+    /// Swift fallback for SPW validation - checks bracket matching.
+    private func validateSpwSwift(_ input: String) -> Bool {
+        var bracketStack: [Character] = []
 
-        // TODO: Integrate with Rust core via UniFFI
-        // For now, show a placeholder
-        preview = interpretPlaceholder(buffer)
-    }
-
-    /// Placeholder interpretation until LLM is integrated.
-    private func interpretPlaceholder(_ input: String) -> String? {
-        guard !input.isEmpty else { return nil }
-
-        // Simple symbol-to-meaning mapping for demo
-        var parts: [String] = []
+        let openBrackets: [Character: Character] = [
+            "<": ">",
+            "(": ")",
+            "[": "]",
+            "{": "}"
+        ]
+        let closeBrackets: Set<Character> = [">", ")", "]", "}"]
 
         for char in input {
-            switch char {
-            case "~": parts.append("becoming")
-            case "#": parts.append("resonance")
-            case ".": parts.append("grounded in")
-            case "?": parts.append("wondering")
-            case "!": parts.append("asserting")
-            case "*": parts.append("valuing")
-            case "&": parts.append("the subject")
-            case "@": parts.append("from perspective")
-            case "^": parts.append("integrating")
-            case "<": parts.append("concept(")
-            case ">": parts.append(")")
-            case "(": parts.append("scene(")
-            case ")": parts.append(")")
-            case "[": parts.append("mode(")
-            case "]": parts.append(")")
-            case "{": parts.append("toward(")
-            case "}": parts.append(")")
-            default: parts.append(String(char))
+            if openBrackets.keys.contains(char) {
+                bracketStack.append(char)
+            } else if closeBrackets.contains(char) {
+                guard let last = bracketStack.last,
+                      openBrackets[last] == char else {
+                    return false
+                }
+                bracketStack.removeLast()
             }
         }
 
+        // All brackets must be closed for valid expression
+        return bracketStack.isEmpty
+    }
+
+    /// Interpret SPW expression against ground context.
+    private func interpretSwift(_ input: String, ground: GroundOption) -> String {
+        var parts: [String] = []
+
+        // Add ground context prefix if selected
+        if ground.id != "none" && !ground.spw.isEmpty {
+            parts.append("[\(ground.name)]")
+        }
+
+        // Simple token-by-token interpretation
+        parts.append(contentsOf: tokenizeSpw(input))
+
         return parts.joined(separator: " ")
+    }
+
+    /// Tokenize SPW expression into readable parts (Swift fallback).
+    private func tokenizeSpw(_ input: String) -> [String] {
+        var result: [String] = []
+        var inBracket = false
+        var bracketContent = ""
+        var bracketType: Character = " "
+
+        for char in input {
+            switch char {
+            case "<", "(", "[", "{":
+                inBracket = true
+                bracketType = char
+                bracketContent = ""
+            case ">", ")", "]", "}":
+                if inBracket {
+                    let wrapper: String
+                    switch bracketType {
+                    case "<": wrapper = "⟨\(bracketContent)⟩"
+                    case "(": wrapper = "(\(bracketContent))"
+                    case "[": wrapper = "[\(bracketContent)]"
+                    case "{": wrapper = "→\(bracketContent)"
+                    default: wrapper = bracketContent
+                    }
+                    result.append(wrapper)
+                    inBracket = false
+                }
+            default:
+                if inBracket {
+                    bracketContent.append(char)
+                } else {
+                    let word: String
+                    switch char {
+                    case "~": word = "becoming"
+                    case "#": word = "vibrating"
+                    case ".": word = "grounded"
+                    case "?": word = "wondering"
+                    case "!": word = "asserting"
+                    case "*": word = "valued"
+                    case "&": word = "self"
+                    case "@": word = "seeing"
+                    case "^": word = "integrating"
+                    case " ": word = ""
+                    default: word = String(char)
+                    }
+                    if !word.isEmpty {
+                        result.append(word)
+                    }
+                }
+            }
+        }
+
+        return result
     }
 }
 

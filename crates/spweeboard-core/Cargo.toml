@@ -1,0 +1,38 @@
+[package]
+name = "spweeboard-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Core library for spweebo'ard - SPW symbolic keyboard with on-device LLM"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "spweeboard_core"
+
+[features]
+default = []
+metal = []   # iOS Metal acceleration
+vulkan = []  # Android Vulkan acceleration
+uniffi = ["dep:uniffi"]
+
+[dependencies]
+thiserror.workspace = true
+derive_more.workspace = true
+smallvec.workspace = true
+compact_str.workspace = true
+smol_str.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+uniffi = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }
+
+[lints]
+workspace = true

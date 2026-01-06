@@ -1,0 +1,137 @@
+// UniFFI interface definition for spweeboard-core
+// Generates Swift and Kotlin bindings
+
+namespace spweeboard_core {
+    // Parse a SPW string into an expression
+    [Throws=SpwError]
+    Expression parse_spw(string input);
+
+    // Compile an expression with optional ground into an LLM prompt
+    string compile_prompt(Expression expr, Ground? ground);
+};
+
+[Error]
+enum SpwError {
+    "ParseError",
+    "InvalidGround",
+};
+
+// SPW Symbol - cognitive primitive
+enum Symbol {
+    "Potential",    // ~
+    "Vibration",    // #
+    "Ground",       // .
+    "Wonder",       // ?
+    "Action",       // !
+    "Value",        // *
+    "Subject",      // &
+    "Perspective",  // @
+    "Integration",  // ^
+};
+
+// Bracket types
+enum BracketKind {
+    "Concept",    // <>
+    "Scene",      // ()
+    "Mode",       // []
+    "Direction",  // {}
+};
+
+// A node in the expression tree
+[Enum]
+interface Node {
+    Symbol(Symbol symbol);
+    Bracket(BracketKind kind, Expression contents);
+    Ident(string value);
+    StringLit(string value);
+};
+
+// A complete SPW expression
+dictionary Expression {
+    sequence<Node> nodes;
+};
+
+// Ground content type
+[Enum]
+interface GroundContent {
+    Natural(string text);
+    Spw(Expression expr);
+};
+
+// A ground context
+dictionary Ground {
+    string id;
+    string name;
+    GroundContent content;
+};
+
+// Expression buffer for incremental input
+interface ExpressionBuffer {
+    constructor();
+
+    void push(string c);
+    void pop();
+    void clear();
+
+    string raw();
+    Expression? current();
+    boolean is_empty();
+
+    void commit();
+    sequence<Expression> history();
+};
+
+// Ground store for persistence
+interface GroundStore {
+    [Throws=StoreError]
+    constructor(string path);
+
+    [Throws=StoreError]
+    void save(Ground ground);
+
+    [Throws=StoreError]
+    Ground? load(string id);
+
+    [Throws=StoreError]
+    sequence<Ground> list_all();
+
+    [Throws=StoreError]
+    boolean delete(string id);
+};
+
+[Error]
+enum StoreError {
+    "DatabaseError",
+    "NotFound",
+};
+
+// Callback for streaming inference
+callback interface StreamCallback {
+    void on_token(string token);
+    void on_complete();
+    void on_error(string message);
+};
+
+// Main keyboard engine interface
+interface SpweeboardEngine {
+    constructor();
+
+    // Buffer operations
+    void push(string input);
+    void pop();
+    void clear_buffer();
+    string current_raw();
+    Expression? current_expression();
+
+    // Ground operations
+    void load_ground(Ground ground);
+    void clear_grounds();
+    Ground? composed_ground();
+
+    // Prompt compilation
+    string? compile_prompt();
+
+    // Commit and history
+    void commit();
+    sequence<Expression> expression_history();
+};

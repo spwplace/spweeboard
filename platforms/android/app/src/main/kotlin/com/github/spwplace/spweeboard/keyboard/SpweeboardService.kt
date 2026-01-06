@@ -227,9 +227,12 @@ class KeyboardViewModel(
                         interpretation.value = result.fullText
                         streamingText.value = null
                         loadingState.value = LoadingState.Idle
-                        // If there's a pending commit, execute it now
-                        pendingCommit?.invoke(result.fullText)
-                        pendingCommit = null
+                        // If there's a pending commit, execute it and clear state
+                        if (pendingCommit != null) {
+                            pendingCommit?.invoke(result.fullText)
+                            pendingCommit = null
+                            commit()  // Clear buffer and save to history
+                        }
                     }
                     is StreamingResult.Error -> {
                         isThinking.value = false

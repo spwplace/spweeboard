@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,14 +26,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import android.content.ClipData
+import android.content.ClipboardManager
 import com.github.spwplace.spweeboard.keyboard.KeyboardLayout
 import com.github.spwplace.spweeboard.keyboard.KeyboardViewModel
+import com.github.spwplace.spweeboard.keyboard.GroundOption
 import com.github.spwplace.spweeboard.model.DownloadState
 import com.github.spwplace.spweeboard.model.InferenceManager
 import com.github.spwplace.spweeboard.model.InferenceStatus
@@ -85,7 +93,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(startOnSettingsTab: Boolean = false) {
-    var selectedTab by remember { mutableIntStateOf(if (startOnSettingsTab) 2 else 0) }
+    var selectedTab by remember { mutableIntStateOf(if (startOnSettingsTab) 3 else 0) }
 
     Scaffold(
         topBar = {
@@ -96,8 +104,8 @@ fun MainScreen(startOnSettingsTab: Boolean = false) {
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
-                    icon = { Icon(Icons.Outlined.Create, contentDescription = "Setup") },
-                    label = { Text("Setup") },
+                    icon = { Icon(Icons.Outlined.Create, contentDescription = "Compose") },
+                    label = { Text("Compose") },
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 }
                 )
@@ -108,18 +116,387 @@ fun MainScreen(startOnSettingsTab: Boolean = false) {
                     onClick = { selectedTab = 1 }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
+                    icon = { Icon(Icons.Outlined.Info, contentDescription = "Setup") },
+                    label = { Text("Setup") },
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings") },
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 }
                 )
             }
         }
     ) { padding ->
-        when (selectedTab) {
-            0 -> SetupScreen(Modifier.padding(padding))
-            1 -> GroundsScreen(Modifier.padding(padding))
-            2 -> SettingsScreen(Modifier.padding(padding))
+        // Keep all tabs always composed to avoid state reinitialization flashes
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            PlaygroundScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (selectedTab == 0) 1f else 0f)
+                    .zIndex(if (selectedTab == 0) 1f else 0f),
+                onNavigateToSettings = { selectedTab = 3 }
+            )
+            GroundsScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (selectedTab == 1) 1f else 0f)
+                    .zIndex(if (selectedTab == 1) 1f else 0f)
+            )
+            SetupScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (selectedTab == 2) 1f else 0f)
+                    .zIndex(if (selectedTab == 2) 1f else 0f)
+            )
+            SettingsScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (selectedTab == 3) 1f else 0f)
+                    .zIndex(if (selectedTab == 3) 1f else 0f)
+            )
+        }
+    }
+}
+
+/**
+ * Entry in the playground conversation history.
+ */
+data class PlaygroundEntry(
+    val spwInput: String,
+    val interpretation: String,
+    val groundName: String?,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
+ * Main playground screen - the primary way to use spweebo'ard.
+ * Shows a conversation-style history of SPW expressions and their interpretations.
+ */
+@Composable
+fun PlaygroundScreen(
+    modifier: Modifier = Modifier,
+    onNavigateToSettings: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val viewModel = remember { KeyboardViewModel() }
+    val inferenceStatus by InferenceManager.status.collectAsState()
+
+    // Conversation history
+    var history by remember { mutableStateOf<List<PlaygroundEntry>>(emptyList()) }
+
+    // Symbol reference visibility
+    var showSymbolReference by remember { mutableStateOf(false) }
+
+    // Track current SPW input for history
+    val currentBuffer by viewModel.buffer
+    val currentGround by viewModel.selectedGround
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+    ) {
+        // Status bar - show loading state or prompt to set up
+        when (inferenceStatus) {
+            is InferenceStatus.Loading -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Loading model...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+            is InferenceStatus.NotLoaded, is InferenceStatus.Error -> {
+                Surface(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (inferenceStatus is InferenceStatus.Error)
+                                "Model error" else "No model loaded",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Go to Settings →",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+            is InferenceStatus.Loaded -> {
+                // No banner needed when model is loaded
+            }
+        }
+
+        // Conversation history area (scrollable)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (history.isEmpty()) {
+                // Empty state
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "~",
+                        fontSize = 48.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Compose with symbols",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Type SPW expressions below and press send to interpret",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+
+                    // Quick symbol hint
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Surface(
+                        onClick = { showSymbolReference = !showSymbolReference },
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Tap for symbol guide",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            } else {
+                // Conversation history
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Clear history button at top
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${history.size} expression${if (history.size != 1) "s" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(onClick = { history = emptyList() }) {
+                            Text("Clear", fontSize = 12.sp)
+                        }
+                    }
+
+                    history.forEach { entry ->
+                        PlaygroundEntryCard(
+                            entry = entry,
+                            onCopy = {
+                                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                clipboard?.setPrimaryClip(
+                                    ClipData.newPlainText("Interpretation", entry.interpretation)
+                                )
+                            }
+                        )
+                    }
+
+                    // Spacer for keyboard
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+
+        // Symbol reference (collapsible)
+        AnimatedVisibility(visible = showSymbolReference) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Symbol Reference",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
+                            onClick = { showSymbolReference = false },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text("×", fontSize = 16.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "~ potential  # vibration  . ground  ? wonder  ! action",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "* value  & subject  @ perspective  ^ integration",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "<> concept  () scene  [] mode  {} direction",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Keyboard
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            )
+        ) {
+            KeyboardLayout(
+                viewModel = viewModel,
+                onCommit = { interpretation ->
+                    // Add to history
+                    history = history + PlaygroundEntry(
+                        spwInput = currentBuffer,
+                        interpretation = interpretation,
+                        groundName = if (currentGround.id != "none") currentGround.name else null
+                    )
+                    viewModel.commit()
+                },
+                onDelete = {
+                    // Just pop from buffer in playground mode
+                },
+                onOpenSettings = {
+                    // Could navigate to settings tab
+                }
+            )
+        }
+    }
+}
+
+/**
+ * Card displaying a single playground entry (SPW + interpretation).
+ */
+@Composable
+private fun PlaygroundEntryCard(
+    entry: PlaygroundEntry,
+    onCopy: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // SPW input row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    // Ground badge if present
+                    if (entry.groundName != null) {
+                        Text(
+                            text = entry.groundName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                        )
+                    }
+                    // SPW expression
+                    Text(
+                        text = entry.spwInput,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Interpretation
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = entry.interpretation,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = onCopy,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Text(
+                        text = "📋",
+                        fontSize = 14.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -138,33 +515,48 @@ fun SetupScreen(modifier: Modifier = Modifier) {
         initial = com.github.spwplace.spweeboard.settings.SpweeboardSettings()
     )
 
-    // Track model status
-    val defaultModel = ModelDownloadManager.DEFAULT_MODEL
-    var modelStatus by remember { mutableStateOf(downloadManager.getModelStatus(defaultModel.id)) }
+    // Initialize selectedModelId to the currently loaded model (if any), otherwise default
+    val initialSelectedModel = remember {
+        val loadedPath = (InferenceManager.status.value as? InferenceStatus.Loaded)?.modelPath
+        if (loadedPath != null) {
+            ModelDownloadManager.AVAILABLE_MODELS.find { loadedPath.endsWith(it.filename) }?.id
+                ?: ModelDownloadManager.DEFAULT_MODEL.id
+        } else {
+            ModelDownloadManager.DEFAULT_MODEL.id
+        }
+    }
+    var selectedModelId by remember { mutableStateOf(initialSelectedModel) }
+    var modelStatuses by remember { mutableStateOf(
+        ModelDownloadManager.AVAILABLE_MODELS.associate { it.id to downloadManager.getModelStatus(it.id) }
+    ) }
 
-    // Observe WorkManager download state
-    val downloadState by downloadManager.observeDownloadState(defaultModel.id)
-        .collectAsState(initial = DownloadState.Idle)
+    // Track download states for all models
+    val downloadStates = ModelDownloadManager.AVAILABLE_MODELS.associate { model ->
+        model.id to downloadManager.observeDownloadState(model.id)
+            .collectAsState(initial = DownloadState.Idle)
+    }
 
-    // Refresh status when download completes
-    LaunchedEffect(downloadState) {
-        if (downloadState is DownloadState.Completed) {
-            modelStatus = downloadManager.getModelStatus(defaultModel.id)
-            // Auto-load only if file actually exists (WorkManager state can be stale after delete)
-            if (modelStatus?.isDownloaded == true) {
-                val completedState = downloadState as DownloadState.Completed
-                InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
+    // Refresh model statuses when any download completes
+    downloadStates.forEach { (modelId, stateHolder) ->
+        val state = stateHolder.value
+        LaunchedEffect(state) {
+            if (state is DownloadState.Completed) {
+                modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
+                    it.id to downloadManager.getModelStatus(it.id)
+                }
+                // Auto-load if this was the selected model and file exists
+                if (modelId == selectedModelId) {
+                    val currentStatus = downloadManager.getModelStatus(modelId)
+                    if (currentStatus.isDownloaded) {
+                        InferenceManager.loadModel(state.modelPath, settings.inferenceParams)
+                    }
+                }
             }
         }
     }
 
     // Determine setup completion states
     val isModelReady = inferenceStatus is InferenceStatus.Loaded
-    val isModelDownloaded = modelStatus?.isDownloaded == true
-
-    // Low space warning state
-    var showLowSpaceWarning by remember { mutableStateOf(false) }
-    val hasEnoughSpace = remember(modelStatus) { downloadManager.hasEnoughSpace(defaultModel.id) }
 
     Column(
         modifier = modifier
@@ -187,170 +579,9 @@ fun SetupScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Step 1: Download AI Model (most important!)
+        // Step 1: Enable Keyboard
         Text(
-            text = "1. Download AI Model",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = when {
-                    isModelReady -> MaterialTheme.colorScheme.primaryContainer
-                    isModelDownloaded -> MaterialTheme.colorScheme.secondaryContainer
-                    else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                }
-            )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Status indicator
-                    Text(
-                        text = when {
-                            isModelReady -> "✓"
-                            isModelDownloaded -> "◐"
-                            else -> "!"
-                        },
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = when {
-                            isModelReady -> MaterialTheme.colorScheme.primary
-                            isModelDownloaded -> MaterialTheme.colorScheme.secondary
-                            else -> MaterialTheme.colorScheme.error
-                        }
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = when {
-                                isModelReady -> "Model Active"
-                                isLoadingModel -> "Loading Model..."
-                                isModelDownloaded -> "Model Downloaded"
-                                downloadState is DownloadState.Downloading -> "Downloading..."
-                                else -> "Model Required"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = when {
-                                isModelReady -> "SPW expressions will be interpreted by AI"
-                                isModelDownloaded -> "Tap to load the model"
-                                else -> "${defaultModel.name} (${formatBytes(defaultModel.sizeBytes)})"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                // Download progress
-                if (downloadState is DownloadState.Downloading) {
-                    val state = downloadState as DownloadState.Downloading
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LinearProgressIndicator(
-                        progress = { state.progress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${formatBytes(state.bytesDownloaded)} / ${formatBytes(state.totalBytes)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Error message
-                if (downloadState is DownloadState.Error) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = (downloadState as DownloadState.Error).message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                // Low space warning
-                if (showLowSpaceWarning && !isModelDownloaded) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = "Low Storage Space",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Text(
-                                text = "You may not have enough space for this download. Free up ${formatBytes(defaultModel.sizeBytes)} to continue.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = { showLowSpaceWarning = false },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Cancel", fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = {
-                                        showLowSpaceWarning = false
-                                        downloadManager.startBackgroundDownload(defaultModel.id)
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Download Anyway", fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Action button
-                if (!isModelReady && downloadState !is DownloadState.Downloading && !showLowSpaceWarning) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            if (isModelDownloaded) {
-                                modelStatus?.modelPath?.let { path ->
-                                    scope.launch { InferenceManager.loadModel(path, settings.inferenceParams) }
-                                }
-                            } else if (!hasEnoughSpace) {
-                                showLowSpaceWarning = true
-                            } else {
-                                downloadManager.startBackgroundDownload(defaultModel.id)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoadingModel
-                    ) {
-                        Text(
-                            if (isModelDownloaded) {
-                                if (isLoadingModel) "Loading..." else "Load Model"
-                            } else {
-                                "Download Model"
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Step 2: Enable Keyboard
-        Text(
-            text = "2. Enable Keyboard",
+            text = "1. Enable Keyboard",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold
         )
@@ -397,111 +628,115 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-        HorizontalDivider()
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Playground section
-        SpwPlayground()
-    }
-}
-
-/**
- * Interactive playground for testing SPW expressions.
- * Uses the actual keyboard layout for a realistic preview.
- */
-@Composable
-fun SpwPlayground() {
-    val viewModel = remember { KeyboardViewModel() }
-    var committedText by remember { mutableStateOf<String?>(null) }
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+        // Step 2: Download AI Model
         Text(
-            text = "Playground",
+            text = "2. Download AI Model",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold
         )
 
-        Text(
-            text = "Try the full keyboard experience below",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        // Inference engine status card
+        val inferenceCardColor by animateColorAsState(
+            targetValue = when (inferenceStatus) {
+                is InferenceStatus.Loaded -> MaterialTheme.colorScheme.primaryContainer
+                is InferenceStatus.Loading -> MaterialTheme.colorScheme.secondaryContainer
+                is InferenceStatus.Error -> MaterialTheme.colorScheme.errorContainer
+                is InferenceStatus.NotLoaded -> MaterialTheme.colorScheme.surfaceContainerLow
+            },
+            animationSpec = tween(300),
+            label = "inferenceCardColor"
         )
-
-        // Show committed output
-        if (committedText != null) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = inferenceCardColor)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                if (isLoadingModel) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Sent:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                        text = when (inferenceStatus) {
+                            is InferenceStatus.Loaded -> "LLM Active"
+                            is InferenceStatus.Loading -> "Loading Model..."
+                            is InferenceStatus.Error -> "LLM Error"
+                            is InferenceStatus.NotLoaded -> "No Model Loaded"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = committedText!!,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        text = when (inferenceStatus) {
+                            is InferenceStatus.Loaded -> "SPW expressions interpreted by on-device AI"
+                            is InferenceStatus.Loading -> "Please wait..."
+                            is InferenceStatus.Error -> (inferenceStatus as InferenceStatus.Error).message
+                            is InferenceStatus.NotLoaded -> "Select and download a model below"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                if (inferenceStatus is InferenceStatus.Loaded) {
+                    TextButton(onClick = { InferenceManager.unloadModel() }) {
+                        Text("Unload")
+                    }
                 }
             }
         }
 
-        // Actual keyboard layout
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            )
-        ) {
-            KeyboardLayout(
-                viewModel = viewModel,
-                onCommit = { text ->
-                    committedText = text
-                    viewModel.commit()
-                },
-                onDelete = {
-                    // Just pop from buffer in playground mode
-                }
-            )
-        }
-
-        // Symbol reference
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            )
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "Symbol Reference",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "~ potential  # vibration  . ground  ? wonder  ! action",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "* value  & subject  @ perspective  ^ integration",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "<> concept  () scene  [] mode  {} direction",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        // Model selection cards
+        ModelDownloadManager.AVAILABLE_MODELS.forEach { model ->
+            val status = modelStatuses[model.id]
+            val isDownloaded = status?.isDownloaded == true
+            val isActiveModel = (inferenceStatus as? InferenceStatus.Loaded)?.modelPath?.endsWith(model.filename) == true
+            val modelDownloadState = downloadStates[model.id]?.value ?: DownloadState.Idle
+            key(model.id, isDownloaded, modelDownloadState) {
+                ModelCard(
+                    model = model,
+                    isDownloaded = isDownloaded,
+                    isSelected = selectedModelId == model.id,
+                    isActive = isActiveModel,
+                    isLoading = isLoadingModel && selectedModelId == model.id,
+                    hasEnoughSpace = downloadManager.hasEnoughSpace(model.id),
+                    downloadState = modelDownloadState,
+                    onSelect = { selectedModelId = model.id },
+                    onDownload = {
+                        downloadManager.startBackgroundDownload(model.id)
+                    },
+                    onLoad = {
+                        val currentStatus = downloadManager.getModelStatus(model.id)
+                        currentStatus.modelPath?.let { path ->
+                            scope.launch {
+                                InferenceManager.loadModel(path, settings.inferenceParams)
+                            }
+                        }
+                    },
+                    onDelete = {
+                        if (isActiveModel) {
+                            InferenceManager.unloadModel()
+                        }
+                        downloadManager.deleteModel(model.id)
+                        modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
+                            it.id to downloadManager.getModelStatus(it.id)
+                        }
+                    },
+                    onCancelDownload = {
+                        downloadManager.cancelDownload(model.id)
+                    }
                 )
             }
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }
@@ -541,36 +776,11 @@ fun SetupStep(number: Int, title: String, description: String) {
 }
 
 /**
- * Represents a conceptual ground - persistent context for SPW interpretation.
- */
-data class Ground(
-    val id: String,
-    val name: String,
-    val spw: String,
-    val description: String,
-    val category: String
-) {
-    companion object {
-        /**
-         * Convert from Rust SpwGround to Kotlin Ground.
-         */
-        fun fromRust(rust: uniffi.spweeboard_core.SpwGround): Ground {
-            return Ground(
-                id = rust.id,
-                name = rust.name,
-                spw = rust.content,
-                description = rust.description,
-                category = rust.category
-            )
-        }
-    }
-}
-
-/**
  * Preset grounds library - loaded from Rust core (single source of truth).
+ * Uses SpwGround directly to preserve content_type information.
  */
-val presetGrounds: List<Ground> by lazy {
-    uniffi.spweeboard_core.presetGrounds().map { Ground.fromRust(it) }
+val presetGrounds: List<SpwGround> by lazy {
+    uniffi.spweeboard_core.presetGrounds()
 }
 
 @Composable
@@ -578,7 +788,7 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var selectedGround by remember { mutableStateOf<Ground?>(null) }
+    var selectedGround by remember { mutableStateOf<SpwGround?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
     // Custom grounds from Rust store
@@ -604,13 +814,14 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
     var editingGround by remember { mutableStateOf<SpwGround?>(null) }
     var deletingGround by remember { mutableStateOf<SpwGround?>(null) }
 
-    val filteredGrounds = remember(searchQuery) {
+    // Filter presets - now using SpwGround directly
+    val filteredPresets = remember(searchQuery) {
         if (searchQuery.isEmpty()) {
             presetGrounds
         } else {
             presetGrounds.filter {
                 it.name.contains(searchQuery, ignoreCase = true) ||
-                it.spw.contains(searchQuery) ||
+                it.content.contains(searchQuery) ||
                 it.description.contains(searchQuery, ignoreCase = true)
             }
         }
@@ -622,13 +833,14 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
         } else {
             customGrounds.filter {
                 it.name.contains(searchQuery, ignoreCase = true) ||
-                it.content.contains(searchQuery)
+                it.content.contains(searchQuery) ||
+                it.description.contains(searchQuery, ignoreCase = true)
             }
         }
     }
 
-    val groupedGrounds = remember(filteredGrounds) {
-        filteredGrounds.groupBy { it.category }
+    val groupedPresets = remember(filteredPresets) {
+        filteredPresets.groupBy { it.category }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -674,29 +886,17 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    filteredCustomGrounds.forEach { customGround ->
-                        CustomGroundCard(
-                            ground = customGround,
-                            onClick = {
-                                // Convert to Ground for selection
-                                selectedGround = Ground(
-                                    id = customGround.id,
-                                    name = customGround.name,
-                                    spw = customGround.content,
-                                    description = if (customGround.contentType == SpwGroundContentType.SPW) {
-                                        "Custom SPW ground"
-                                    } else {
-                                        customGround.content
-                                    },
-                                    category = "Custom"
-                                )
-                            },
+                    filteredCustomGrounds.forEach { ground ->
+                        GroundCard(
+                            ground = ground,
+                            isSelected = selectedGround?.id == ground.id,
+                            onClick = { selectedGround = ground },
                             onEdit = {
-                                editingGround = customGround
+                                editingGround = ground
                                 showEditorDialog = true
                             },
                             onDelete = {
-                                deletingGround = customGround
+                                deletingGround = ground
                             }
                         )
                     }
@@ -705,7 +905,7 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
                 }
 
                 // Preset grounds
-                groupedGrounds.forEach { (category, grounds) ->
+                groupedPresets.forEach { (category, grounds) ->
                     Text(
                         text = category,
                         style = MaterialTheme.typography.titleSmall,
@@ -779,76 +979,11 @@ fun GroundsScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun CustomGroundCard(
-    ground: SpwGround,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = ground.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Text(
-                    text = ground.content,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = if (ground.contentType == SpwGroundContentType.SPW) {
-                            FontFamily.Monospace
-                        } else FontFamily.Default
-                    ),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                    maxLines = 2
-                )
-                Text(
-                    text = if (ground.contentType == SpwGroundContentType.SPW) "SPW" else "Natural",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(
-                    onClick = onEdit,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("Edit", fontSize = 12.sp)
-                }
-                TextButton(
-                    onClick = onDelete,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete", fontSize = 12.sp)
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ActiveGroundCard(
-    ground: Ground,
+    ground: SpwGround,
     onClear: () -> Unit
 ) {
+    val isSpw = ground.contentType == SpwGroundContentType.SPW
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -863,22 +998,33 @@ private fun ActiveGroundCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Active Ground",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Active Ground",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = if (isSpw) "SPW" else "Natural",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    )
+                }
                 Text(
                     text = ground.name,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    text = ground.spw,
+                    text = ground.content,
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = if (isSpw) FontFamily.Monospace else FontFamily.Default
                     ),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    maxLines = 2
                 )
             }
             IconButton(onClick = onClear) {
@@ -894,10 +1040,15 @@ private fun ActiveGroundCard(
 
 @Composable
 private fun GroundCard(
-    ground: Ground,
+    ground: SpwGround,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
+    val isSpw = ground.contentType == SpwGroundContentType.SPW
+    val isCustom = onEdit != null || onDelete != null
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -905,57 +1056,98 @@ private fun GroundCard(
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.secondaryContainer
+            } else if (isCustom) {
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
             } else {
                 MaterialTheme.colorScheme.surfaceContainerHigh
             }
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = ground.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
-                if (isSelected) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(
-                        text = "✓",
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        text = ground.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     )
+                    // Content type badge
+                    Text(
+                        text = if (isSpw) "SPW" else "Natural",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (isSelected) {
+                        Text(
+                            text = "✓",
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    if (onEdit != null) {
+                        TextButton(
+                            onClick = onEdit,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("Edit", fontSize = 12.sp)
+                        }
+                    }
+                    if (onDelete != null) {
+                        TextButton(
+                            onClick = onDelete,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Delete", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
+            // Content - use monospace for SPW
             Text(
-                text = ground.spw,
+                text = ground.content,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = if (isSpw) FontFamily.Monospace else FontFamily.Default
                 ),
                 color = if (isSelected) {
                     MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                 } else {
                     MaterialTheme.colorScheme.primary
-                }
+                },
+                maxLines = 2
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = ground.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
+            // Description if present
+            if (ground.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = ground.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2
+                )
+            }
         }
     }
 }
@@ -965,48 +1157,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val downloadManager = remember { ModelDownloadManager.getInstance(context) }
-    val inferenceStatus by InferenceManager.status.collectAsState()
-    val isLoadingModel by InferenceManager.isLoading.collectAsState()
 
     // Settings repository
     val settingsRepository = remember { SettingsRepository.getInstance(context) }
     val settings by settingsRepository.settings.collectAsState(
         initial = com.github.spwplace.spweeboard.settings.SpweeboardSettings()
     )
-
-    // Initialize selectedModelId to the currently loaded model (if any), otherwise default
-    val initialSelectedModel = remember {
-        val loadedPath = (InferenceManager.status.value as? InferenceStatus.Loaded)?.modelPath
-        if (loadedPath != null) {
-            ModelDownloadManager.AVAILABLE_MODELS.find { loadedPath.endsWith(it.filename) }?.id
-                ?: ModelDownloadManager.DEFAULT_MODEL.id
-        } else {
-            ModelDownloadManager.DEFAULT_MODEL.id
-        }
-    }
-    var selectedModelId by remember { mutableStateOf(initialSelectedModel) }
-    var modelStatuses by remember { mutableStateOf(
-        ModelDownloadManager.AVAILABLE_MODELS.associate { it.id to downloadManager.getModelStatus(it.id) }
-    ) }
-
-    // Observe WorkManager download state for selected model
-    val downloadState by downloadManager.observeDownloadState(selectedModelId)
-        .collectAsState(initial = DownloadState.Idle)
-
-    // Refresh model statuses when download completes and auto-load model
-    LaunchedEffect(downloadState) {
-        if (downloadState is DownloadState.Completed) {
-            modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
-                it.id to downloadManager.getModelStatus(it.id)
-            }
-            // Auto-load only if file actually exists (WorkManager state can be stale after delete)
-            val completedState = downloadState as DownloadState.Completed
-            val currentStatus = downloadManager.getModelStatus(selectedModelId)
-            if (currentStatus.isDownloaded) {
-                InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
-            }
-        }
-    }
 
     Column(
         modifier = modifier
@@ -1076,124 +1232,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
             }
         )
-
-        HorizontalDivider()
-
-        Text(
-            text = "Language Model",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        // Inference engine status card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = when (inferenceStatus) {
-                    is InferenceStatus.Loaded -> MaterialTheme.colorScheme.primaryContainer
-                    is InferenceStatus.Loading -> MaterialTheme.colorScheme.secondaryContainer
-                    is InferenceStatus.Error -> MaterialTheme.colorScheme.errorContainer
-                    is InferenceStatus.NotLoaded -> MaterialTheme.colorScheme.surfaceContainerLow
-                }
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (isLoadingModel) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = when (inferenceStatus) {
-                            is InferenceStatus.Loaded -> "LLM Active"
-                            is InferenceStatus.Loading -> "Loading Model..."
-                            is InferenceStatus.Error -> "LLM Error"
-                            is InferenceStatus.NotLoaded -> "No Model Loaded"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = when (inferenceStatus) {
-                            is InferenceStatus.Loaded -> "SPW expressions interpreted by on-device AI"
-                            is InferenceStatus.Loading -> "Please wait..."
-                            is InferenceStatus.Error -> (inferenceStatus as InferenceStatus.Error).message
-                            is InferenceStatus.NotLoaded -> "Using simple symbol mapping"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (inferenceStatus is InferenceStatus.Loaded) {
-                    TextButton(onClick = { InferenceManager.unloadModel() }) {
-                        Text("Unload")
-                    }
-                }
-            }
-        }
-
-        Text(
-            text = "Download a model for on-device SPW interpretation",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Model selection cards
-        ModelDownloadManager.AVAILABLE_MODELS.forEach { model ->
-            // Read status fresh - use key to force recomposition when status changes
-            val status = modelStatuses[model.id]
-            val isDownloaded = status?.isDownloaded == true
-            // Check if this model's file is the active one (use filename for exact match)
-            val isActiveModel = (inferenceStatus as? InferenceStatus.Loaded)?.modelPath?.endsWith(model.filename) == true
-            key(model.id, isDownloaded) {
-            ModelCard(
-                model = model,
-                isDownloaded = isDownloaded,
-                isSelected = selectedModelId == model.id,
-                isActive = isActiveModel,
-                isLoading = isLoadingModel && selectedModelId == model.id,
-                hasEnoughSpace = downloadManager.hasEnoughSpace(model.id),
-                downloadState = if (selectedModelId == model.id) downloadState else DownloadState.Idle,
-                onSelect = { selectedModelId = model.id },
-                onDownload = {
-                    downloadManager.startBackgroundDownload(model.id)
-                },
-                onLoad = {
-                    // Re-check status at click time to avoid stale closures
-                    val currentStatus = downloadManager.getModelStatus(model.id)
-                    currentStatus.modelPath?.let { path ->
-                        scope.launch {
-                            InferenceManager.loadModel(path, settings.inferenceParams)
-                        }
-                    }
-                },
-                onDelete = {
-                    // Unload model first if it's active
-                    if (isActiveModel) {
-                        InferenceManager.unloadModel()
-                    }
-                    downloadManager.deleteModel(model.id)
-                    modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
-                        it.id to downloadManager.getModelStatus(it.id)
-                    }
-                },
-                onCancelDownload = {
-                    downloadManager.cancelDownload(model.id)
-                }
-            )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
 
         HorizontalDivider()
 
@@ -1402,7 +1440,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.primary
         )
 
-        val storageInfo = remember(modelStatuses) { downloadManager.getStorageInfo() }
+        var storageRefreshKey by remember { mutableIntStateOf(0) }
+        val storageInfo = remember(storageRefreshKey) { downloadManager.getStorageInfo() }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1491,10 +1530,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     OutlinedButton(
                         onClick = {
                             downloadManager.clearAllPartialDownloads()
-                            // Refresh statuses
-                            modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
-                                it.id to downloadManager.getModelStatus(it.id)
-                            }
+                            storageRefreshKey++
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1537,18 +1573,21 @@ private fun ModelCard(
     val isDownloading = downloadState is DownloadState.Downloading || downloadState is DownloadState.Verifying
     var showLowSpaceWarning by remember { mutableStateOf(false) }
 
+    val cardColor by animateColorAsState(
+        targetValue = when {
+            isActive -> MaterialTheme.colorScheme.primaryContainer
+            isSelected && isDownloaded -> MaterialTheme.colorScheme.secondaryContainer
+            isSelected -> MaterialTheme.colorScheme.tertiaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = tween(300),
+        label = "modelCardColor"
+    )
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = !isDownloading && !isLoading) { onSelect() },
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isActive -> MaterialTheme.colorScheme.primaryContainer
-                isSelected && isDownloaded -> MaterialTheme.colorScheme.secondaryContainer
-                isSelected -> MaterialTheme.colorScheme.tertiaryContainer
-                else -> MaterialTheme.colorScheme.surfaceContainerHigh
-            }
-        )
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

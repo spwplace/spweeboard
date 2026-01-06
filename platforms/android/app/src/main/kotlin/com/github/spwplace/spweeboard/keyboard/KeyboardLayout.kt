@@ -67,9 +67,11 @@ fun KeyboardLayout(
     val loadingState by viewModel.loadingState
     val selectedGround by viewModel.selectedGround
     val isHistoryVisible by viewModel.isHistoryVisible
+    val streamingText by viewModel.streamingText
+    val isThinking by viewModel.isThinking
 
-    // Can only send if we have a valid interpretation (no errors, not loading)
-    val canSend = parseState == ParseState.Valid && buffer.isNotEmpty() && interpretation != null && !loadingState.isLoading
+    // Can send if we have a valid expression and not currently loading
+    val canSend = parseState == ParseState.Valid && buffer.isNotEmpty() && !loadingState.isLoading
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -83,6 +85,8 @@ fun KeyboardLayout(
                 buffer = buffer,
                 parseState = parseState,
                 interpretation = interpretation,
+                streamingText = streamingText,
+                isThinking = isThinking,
                 error = interpretError,
                 loadingState = loadingState,
                 onClear = { viewModel.clear() },
@@ -132,8 +136,10 @@ fun KeyboardLayout(
                 onBackspace = { viewModel.pop() },
                 onSpace = { viewModel.pushChar(" ") },
                 onSend = {
-                    if (canSend && interpretation != null) {
-                        onCommit(interpretation!!)
+                    if (canSend) {
+                        viewModel.send { interpretedText ->
+                            onCommit(interpretedText)
+                        }
                     }
                 },
                 canSend = canSend,
@@ -178,9 +184,6 @@ sealed class LoadingState {
     /** Interpretation is running */
     data object Interpreting : LoadingState()
 
-    /** Streaming tokens (future use) */
-    data class Streaming(val tokensReceived: Int, val partialText: String) : LoadingState()
-
     val isLoading: Boolean get() = this !is Idle
 }
 
@@ -216,6 +219,8 @@ private fun BufferDisplay(
     buffer: String,
     parseState: ParseState,
     interpretation: String?,
+    streamingText: String? = null,
+    isThinking: Boolean = false,
     error: String?,
     loadingState: LoadingState = LoadingState.Idle,
     onClear: () -> Unit,
@@ -223,6 +228,7 @@ private fun BufferDisplay(
     onErrorTap: (() -> Unit)? = null
 ) {
     val isLoading = loadingState.isLoading
+    val isStreaming = streamingText != null || isThinking
 
     // Show error state if there's an error
     val hasError = error != null && parseState == ParseState.Valid && !isLoading
@@ -333,10 +339,6 @@ private fun BufferDisplay(
             val loadingText = when (loadingState) {
                 is LoadingState.CheckingModel -> "Checking model..."
                 is LoadingState.Interpreting -> "Interpreting..."
-                is LoadingState.Streaming -> {
-                    val tokens = loadingState.tokensReceived
-                    "Generating ($tokens tokens)..."
-                }
                 else -> "Loading..."
             }
             Row(
@@ -377,20 +379,9 @@ private fun BufferDisplay(
                     }
                 }
             }
-            // Show partial streaming text if available
-            if (loadingState is LoadingState.Streaming && loadingState.partialText.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "→ ${loadingState.partialText}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
         }
         // Show error message (tappable to open settings)
-        else if (hasError && error != null) {
+        else if (hasError) {
             Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier
@@ -419,7 +410,39 @@ private fun BufferDisplay(
                 }
             }
         }
-        // Show interpretation preview
+        // Show thinking indicator (pulsing animation)
+        else if (isThinking && parseState == ParseState.Valid) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Pulsing dot with thinking animation
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = shimmerAlpha))
+                )
+                Text(
+                    text = "Thinking...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                )
+            }
+        }
+        // Show streaming text (partial result)
+        else if (streamingText != null && parseState == ParseState.Valid) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "→ $streamingText",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        // Show final interpretation preview
         else if (interpretation != null && parseState == ParseState.Valid) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(

@@ -11,7 +11,9 @@ mod llama;
 pub use engine::{GenerationParams, InferenceConfig, InferenceEngine};
 
 #[cfg(feature = "llama")]
-pub use llama::{strip_thinking, LlamaEngine, LlamaError, ModelLoadProgress};
+pub use llama::{
+    strip_thinking, LlamaEngine, LlamaError, ModelLoadProgress, StreamChunk, StreamingPhase,
+};
 
 /// A mock inference engine for testing.
 #[derive(Debug, Clone, Default)]

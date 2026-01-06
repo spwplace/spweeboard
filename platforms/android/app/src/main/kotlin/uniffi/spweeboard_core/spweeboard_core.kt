@@ -654,6 +654,36 @@ internal open class UniffiForeignFutureStructVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceSpwStreamCallbackMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`phase`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`isFinal`: Byte,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSpwStreamCallbackMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("onChunk", "onError", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceSpwStreamCallback(
+    @JvmField internal var `onChunk`: UniffiCallbackInterfaceSpwStreamCallbackMethod0? = null,
+    @JvmField internal var `onError`: UniffiCallbackInterfaceSpwStreamCallbackMethod1? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `onChunk`: UniffiCallbackInterfaceSpwStreamCallbackMethod0? = null,
+        `onError`: UniffiCallbackInterfaceSpwStreamCallbackMethod1? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceSpwStreamCallback(`onChunk`,`onError`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceSpwStreamCallback) {
+        `onChunk` = other.`onChunk`
+        `onError` = other.`onError`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+
+
+
+
+
 
 
 
@@ -802,6 +832,7 @@ internal interface UniffiLib : Library {
             .also { lib: UniffiLib ->
                 uniffiCheckContractApiVersion(lib)
                 uniffiCheckApiChecksums(lib)
+                uniffiCallbackInterfaceSpwStreamCallback.register(lib)
                 }
         }
         
@@ -871,11 +902,15 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_interpret(`ptr`: Pointer,`spwInput`: RustBuffer.ByValue,`groundName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwinferenceengine_interpret_streaming(`ptr`: Pointer,`spwInput`: RustBuffer.ByValue,`groundName`: RustBuffer.ByValue,`callback`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_is_cancelled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_load_model(`ptr`: Pointer,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_unload_model(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_spweeboard_core_fn_init_callback_vtable_spwstreamcallback(`vtable`: UniffiVTableCallbackInterfaceSpwStreamCallback,
     ): Unit
     fun uniffi_spweeboard_core_fn_func_available_models(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1071,6 +1106,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret(
     ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret_streaming(
+    ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_is_cancelled(
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_load_model(
@@ -1082,6 +1119,10 @@ internal interface UniffiLib : Library {
     fun uniffi_spweeboard_core_checksum_constructor_spwgroundstore_open(
     ): Short
     fun uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwstreamcallback_on_chunk(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwstreamcallback_on_error(
     ): Short
     fun ffi_spweeboard_core_uniffi_contract_version(
     ): Int
@@ -1193,6 +1234,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret() != 17813.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret_streaming() != 59917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_is_cancelled() != 38804.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1209,6 +1253,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new() != 38651.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwstreamcallback_on_chunk() != 41674.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwstreamcallback_on_error() != 53037.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -2426,6 +2476,21 @@ public interface SpwInferenceEngineInterface {
     fun `interpret`(`spwInput`: kotlin.String, `groundName`: kotlin.String?): SpwInferenceResult
     
     /**
+     * Interprets an SPW expression with streaming output.
+     *
+     * The callback will be invoked on a background thread with chunks of output.
+     * During the thinking phase, `on_chunk` is called with empty text to signal state.
+     *
+     * This method returns immediately; interpretation happens asynchronously.
+     *
+     * # Arguments
+     * * `spw_input` - The SPW expression to interpret.
+     * * `ground_name` - Optional ground context name.
+     * * `callback` - Callback to receive streaming updates.
+     */
+    fun `interpretStreaming`(`spwInput`: kotlin.String, `groundName`: kotlin.String?, `callback`: SpwStreamCallback)
+    
+    /**
      * Returns whether a cancellation is pending.
      */
     fun `isCancelled`(): kotlin.Boolean
@@ -2600,6 +2665,30 @@ open class SpwInferenceEngine: Disposable, AutoCloseable, SpwInferenceEngineInte
     }
     )
     }
+    
+
+    
+    /**
+     * Interprets an SPW expression with streaming output.
+     *
+     * The callback will be invoked on a background thread with chunks of output.
+     * During the thinking phase, `on_chunk` is called with empty text to signal state.
+     *
+     * This method returns immediately; interpretation happens asynchronously.
+     *
+     * # Arguments
+     * * `spw_input` - The SPW expression to interpret.
+     * * `ground_name` - Optional ground context name.
+     * * `callback` - Callback to receive streaming updates.
+     */override fun `interpretStreaming`(`spwInput`: kotlin.String, `groundName`: kotlin.String?, `callback`: SpwStreamCallback)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwinferenceengine_interpret_streaming(
+        it, FfiConverterString.lower(`spwInput`),FfiConverterOptionalString.lower(`groundName`),FfiConverterTypeSpwStreamCallback.lower(`callback`),_status)
+}
+    }
+    
     
 
     
@@ -3377,6 +3466,167 @@ public object FfiConverterTypeSpwParseState: FfiConverterRustBuffer<SpwParseStat
 }
 
 
+
+
+
+/**
+ * Phase of streaming generation (FFI-safe).
+ */
+
+enum class SpwStreamingPhase {
+    
+    /**
+     * Model is outputting thinking content (hidden from user).
+     */
+    THINKING,
+    /**
+     * Model is outputting visible content.
+     */
+    CONTENT,
+    /**
+     * Generation complete.
+     */
+    COMPLETE;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwStreamingPhase: FfiConverterRustBuffer<SpwStreamingPhase> {
+    override fun read(buf: ByteBuffer) = try {
+        SpwStreamingPhase.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: SpwStreamingPhase) = 4UL
+
+    override fun write(value: SpwStreamingPhase, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+
+/**
+ * Callback interface for streaming inference results.
+ *
+ * Implement this trait in Kotlin/Swift to receive streaming updates.
+ * Callbacks may be invoked from any thread - handle accordingly.
+ */
+public interface SpwStreamCallback {
+    
+    /**
+     * Called with each chunk of generated text.
+     *
+     * # Arguments
+     * * `phase` - Current generation phase (Thinking/Content/Complete)
+     * * `text` - The chunk of text (may be empty during phase transitions)
+     * * `is_final` - True for the last chunk
+     */
+    fun `onChunk`(`phase`: SpwStreamingPhase, `text`: kotlin.String, `isFinal`: kotlin.Boolean)
+    
+    /**
+     * Called if an error occurs during streaming.
+     */
+    fun `onError`(`message`: kotlin.String)
+    
+    companion object
+}
+
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceSpwStreamCallback {
+    internal object `onChunk`: UniffiCallbackInterfaceSpwStreamCallbackMethod0 {
+        override fun callback(`uniffiHandle`: Long,`phase`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`isFinal`: Byte,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSpwStreamCallback.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onChunk`(
+                    FfiConverterTypeSpwStreamingPhase.lift(`phase`),
+                    FfiConverterString.lift(`text`),
+                    FfiConverterBoolean.lift(`isFinal`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `onError`: UniffiCallbackInterfaceSpwStreamCallbackMethod1 {
+        override fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSpwStreamCallback.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onError`(
+                    FfiConverterString.lift(`message`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeSpwStreamCallback.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceSpwStreamCallback.UniffiByValue(
+        `onChunk`,
+        `onError`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_spweeboard_core_fn_init_callback_vtable_spwstreamcallback(vtable)
+    }
+}
+
+/**
+ * The ffiConverter which transforms the Callbacks in to handles to pass to Rust.
+ *
+ * @suppress
+ */
+public object FfiConverterTypeSpwStreamCallback: FfiConverterCallbackInterface<SpwStreamCallback>()
 
 
 

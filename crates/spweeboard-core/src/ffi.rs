@@ -14,7 +14,7 @@ use crate::compiler::PromptCompiler;
 use crate::ground::{Ground, GroundContent, GroundStore};
 
 #[cfg(feature = "llama")]
-use crate::inference::{InferenceConfig, InferenceEngine, GenerationParams, LlamaEngine, LlamaError};
+use crate::inference::{GenerationParams, InferenceConfig, InferenceEngine, LlamaEngine, LlamaError};
 
 /// Error type for FFI operations.
 #[derive(Debug, thiserror::Error)]
@@ -633,6 +633,51 @@ pub struct SpwInferenceResult {
     pub error: Option<String>,
 }
 
+// =============================================================================
+// Streaming Inference Types
+// =============================================================================
+
+/// Phase of streaming generation (FFI-safe).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum SpwStreamingPhase {
+    /// Model is outputting thinking content (hidden from user).
+    Thinking,
+    /// Model is outputting visible content.
+    Content,
+    /// Generation complete.
+    Complete,
+}
+
+#[cfg(feature = "llama")]
+impl From<crate::inference::StreamingPhase> for SpwStreamingPhase {
+    fn from(phase: crate::inference::StreamingPhase) -> Self {
+        match phase {
+            crate::inference::StreamingPhase::Thinking => Self::Thinking,
+            crate::inference::StreamingPhase::Content => Self::Content,
+            crate::inference::StreamingPhase::Complete => Self::Complete,
+        }
+    }
+}
+
+/// Callback interface for streaming inference results.
+///
+/// Implement this trait in Kotlin/Swift to receive streaming updates.
+/// Callbacks may be invoked from any thread - handle accordingly.
+#[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
+pub trait SpwStreamCallback: Send + Sync {
+    /// Called with each chunk of generated text.
+    ///
+    /// # Arguments
+    /// * `phase` - Current generation phase (Thinking/Content/Complete)
+    /// * `text` - The chunk of text (may be empty during phase transitions)
+    /// * `is_final` - True for the last chunk
+    fn on_chunk(&self, phase: SpwStreamingPhase, text: String, is_final: bool);
+
+    /// Called if an error occurs during streaming.
+    fn on_error(&self, message: String);
+}
+
 /// Engine status for UI feedback.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -662,7 +707,8 @@ impl SpwInferenceEngine {
     /// Creates a new inference engine (model not yet loaded).
     #[cfg_attr(feature = "uniffi", uniffi::constructor)]
     pub fn new() -> Self {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
@@ -883,6 +929,95 @@ impl SpwInferenceEngine {
             }
         })
     }
+
+    /// Interprets an SPW expression with streaming output.
+    ///
+    /// The callback will be invoked on a background thread with chunks of output.
+    /// During the thinking phase, `on_chunk` is called with empty text to signal state.
+    ///
+    /// This method returns immediately; interpretation happens asynchronously.
+    ///
+    /// # Arguments
+    /// * `spw_input` - The SPW expression to interpret.
+    /// * `ground_name` - Optional ground context name.
+    /// * `callback` - Callback to receive streaming updates.
+    pub fn interpret_streaming(
+        &self,
+        spw_input: String,
+        ground_name: Option<String>,
+        callback: Box<dyn SpwStreamCallback>,
+    ) {
+        // Validate and parse SPW
+        if spw_input.is_empty() {
+            callback.on_error("Empty input".to_string());
+            return;
+        }
+
+        let expression = match parse(&spw_input) {
+            Ok(expr) => expr,
+            Err(e) => {
+                callback.on_error(format!("Parse error: {}", e));
+                return;
+            }
+        };
+
+        // Build ground if provided
+        let ground = ground_name.and_then(|name| {
+            if name.is_empty() || name == "None" {
+                None
+            } else {
+                Some(crate::ground::Ground::natural(&name, &name, &name, "", ""))
+            }
+        });
+
+        // Compile prompt
+        let prompt = match self.compiler.lock() {
+            Ok(compiler) => compiler.compile(&expression, ground.as_ref()),
+            Err(_) => {
+                callback.on_error("Failed to acquire compiler lock".to_string());
+                return;
+            }
+        };
+
+        // Clone Arc for async block
+        let inner = self.inner.clone();
+        let callback = std::sync::Arc::new(callback);
+
+        // Spawn the streaming task on our runtime
+        self.runtime.spawn(async move {
+            let guard = inner.lock().await;
+            match guard.as_ref() {
+                Some(engine) => {
+                    let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::inference::StreamChunk>(32);
+                    let callback_fwd = callback.clone();
+
+                    // Spawn task to forward chunks to callback
+                    let forward_task = tokio::spawn(async move {
+                        while let Some(chunk) = rx.recv().await {
+                            callback_fwd.on_chunk(
+                                chunk.phase.into(),
+                                chunk.text,
+                                chunk.is_final,
+                            );
+                        }
+                    });
+
+                    // Run streaming generation
+                    if let Err(e) = engine.stream_chunked(&prompt, tx).await {
+                        // Don't report cancellation as an error
+                        if !matches!(e, LlamaError::Cancelled) {
+                            callback.on_error(format!("Streaming error: {}", e));
+                        }
+                    }
+
+                    let _ = forward_task.await;
+                }
+                None => {
+                    callback.on_error("No model loaded".to_string());
+                }
+            }
+        });
+    }
 }
 
 #[cfg(feature = "llama")]
@@ -944,6 +1079,18 @@ impl SpwInferenceEngine {
             text: None,
             error: Some("LLM inference not available".to_string()),
         }
+    }
+
+    pub fn interpret_streaming(
+        &self,
+        spw_input: String,
+        ground_name: Option<String>,
+        callback: Box<dyn SpwStreamCallback>,
+    ) {
+        // Fall back to simple interpretation, delivered as a single chunk
+        let result = interpret_spw_simple(spw_input, ground_name);
+        callback.on_chunk(SpwStreamingPhase::Content, result, false);
+        callback.on_chunk(SpwStreamingPhase::Complete, String::new(), true);
     }
 }
 

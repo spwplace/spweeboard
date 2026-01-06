@@ -4,19 +4,41 @@ import android.content.Context
 import android.util.Log
 import com.github.spwplace.spweeboard.settings.InferenceParams
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import uniffi.spweeboard_core.SpwEngineStatus
 import uniffi.spweeboard_core.SpwInferenceConfig
 import uniffi.spweeboard_core.SpwInferenceEngine
 import uniffi.spweeboard_core.SpwInferenceResult
+import uniffi.spweeboard_core.SpwStreamCallback
+import uniffi.spweeboard_core.SpwStreamingPhase
 
 /**
  * Singleton manager for LLM inference.
  * Handles model loading and provides interpretation services.
  */
+/**
+ * Result emitted during streaming interpretation.
+ */
+sealed class StreamingResult {
+    /** Model is thinking (hidden from user). */
+    data object Thinking : StreamingResult()
+
+    /** Chunk of visible content. */
+    data class Chunk(val text: String) : StreamingResult()
+
+    /** Final result with complete text. */
+    data class Complete(val fullText: String) : StreamingResult()
+
+    /** Error during streaming. */
+    data class Error(val message: String) : StreamingResult()
+}
+
 object InferenceManager {
     private const val TAG = "InferenceManager"
 
@@ -28,6 +50,16 @@ object InferenceManager {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // Streaming support
+    private val _streamingResults = MutableSharedFlow<StreamingResult>(
+        replay = 0,
+        extraBufferCapacity = 64
+    )
+    val streamingResults: SharedFlow<StreamingResult> = _streamingResults.asSharedFlow()
+
+    // Accumulator for building complete text during streaming
+    private val streamingAccumulator = StringBuilder()
 
     /**
      * Initialize the engine (call once on app startup).
@@ -99,7 +131,11 @@ object InferenceManager {
      * Unload the current model.
      */
     fun unloadModel() {
-        engine?.unloadModel()
+        try {
+            engine?.unloadModel()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during unload FFI call", e)
+        }
         currentModelPath = null
         _status.value = InferenceStatus.NotLoaded
         Log.i(TAG, "Model unloaded")
@@ -170,6 +206,69 @@ object InferenceManager {
             engine?.getStatus()
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * Start streaming interpretation.
+     * Results are emitted to [streamingResults] SharedFlow.
+     *
+     * @param spwInput The SPW expression to interpret.
+     * @param groundName Optional ground context name.
+     */
+    fun interpretStreaming(spwInput: String, groundName: String?) {
+        val eng = engine
+        if (eng == null) {
+            _streamingResults.tryEmit(StreamingResult.Error("Engine not initialized"))
+            return
+        }
+
+        if (_status.value !is InferenceStatus.Loaded) {
+            _streamingResults.tryEmit(StreamingResult.Error("No model loaded"))
+            return
+        }
+
+        // Reset accumulator
+        streamingAccumulator.clear()
+        _isLoading.value = true
+
+        val callback = object : SpwStreamCallback {
+            override fun onChunk(phase: SpwStreamingPhase, text: String, isFinal: Boolean) {
+                when {
+                    isFinal -> {
+                        val completeText = streamingAccumulator.toString()
+                        _streamingResults.tryEmit(StreamingResult.Complete(completeText))
+                        _isLoading.value = false
+                        Log.d(TAG, "Streaming complete: ${completeText.take(50)}...")
+                    }
+                    phase == SpwStreamingPhase.THINKING -> {
+                        _streamingResults.tryEmit(StreamingResult.Thinking)
+                        Log.v(TAG, "Streaming: thinking...")
+                    }
+                    phase == SpwStreamingPhase.CONTENT && text.isNotEmpty() -> {
+                        streamingAccumulator.append(text)
+                        _streamingResults.tryEmit(StreamingResult.Chunk(text))
+                        Log.v(TAG, "Streaming chunk: ${text.take(20)}")
+                    }
+                    // Ignore empty content chunks (phase transitions)
+                }
+            }
+
+            override fun onError(message: String) {
+                Log.e(TAG, "Streaming error: $message")
+                streamingAccumulator.clear()
+                _streamingResults.tryEmit(StreamingResult.Error(message))
+                _isLoading.value = false
+            }
+        }
+
+        try {
+            Log.d(TAG, "Starting streaming interpretation: '$spwInput' with ground: $groundName")
+            eng.interpretStreaming(spwInput, groundName, callback)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start streaming", e)
+            _streamingResults.tryEmit(StreamingResult.Error(e.message ?: "Unknown error"))
+            _isLoading.value = false
         }
     }
 }

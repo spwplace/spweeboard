@@ -105,10 +105,17 @@ enum StoreError {
     "NotFound",
 };
 
+// Phase of streaming generation
+enum StreamingPhase {
+    "Thinking",
+    "Content",
+    "Complete",
+};
+
 // Callback for streaming inference
+// NOTE: Actual implementation uses proc-macro in ffi.rs (SpwStreamCallback)
 callback interface StreamCallback {
-    void on_token(string token);
-    void on_complete();
+    void on_chunk(StreamingPhase phase, string text, boolean is_final);
     void on_error(string message);
 };
 

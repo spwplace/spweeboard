@@ -150,9 +150,11 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     LaunchedEffect(downloadState) {
         if (downloadState is DownloadState.Completed) {
             modelStatus = downloadManager.getModelStatus(defaultModel.id)
-            // Auto-load the model with current inference params
-            val completedState = downloadState as DownloadState.Completed
-            InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
+            // Auto-load only if file actually exists (WorkManager state can be stale after delete)
+            if (modelStatus?.isDownloaded == true) {
+                val completedState = downloadState as DownloadState.Completed
+                InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
+            }
         }
     }
 
@@ -972,7 +974,17 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         initial = com.github.spwplace.spweeboard.settings.SpweeboardSettings()
     )
 
-    var selectedModelId by remember { mutableStateOf(ModelDownloadManager.DEFAULT_MODEL.id) }
+    // Initialize selectedModelId to the currently loaded model (if any), otherwise default
+    val initialSelectedModel = remember {
+        val loadedPath = (InferenceManager.status.value as? InferenceStatus.Loaded)?.modelPath
+        if (loadedPath != null) {
+            ModelDownloadManager.AVAILABLE_MODELS.find { loadedPath.endsWith(it.filename) }?.id
+                ?: ModelDownloadManager.DEFAULT_MODEL.id
+        } else {
+            ModelDownloadManager.DEFAULT_MODEL.id
+        }
+    }
+    var selectedModelId by remember { mutableStateOf(initialSelectedModel) }
     var modelStatuses by remember { mutableStateOf(
         ModelDownloadManager.AVAILABLE_MODELS.associate { it.id to downloadManager.getModelStatus(it.id) }
     ) }
@@ -987,9 +999,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             modelStatuses = ModelDownloadManager.AVAILABLE_MODELS.associate {
                 it.id to downloadManager.getModelStatus(it.id)
             }
-            // Auto-load the downloaded model with current inference params
+            // Auto-load only if file actually exists (WorkManager state can be stale after delete)
             val completedState = downloadState as DownloadState.Completed
-            InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
+            val currentStatus = downloadManager.getModelStatus(selectedModelId)
+            if (currentStatus.isDownloaded) {
+                InferenceManager.loadModel(completedState.modelPath, settings.inferenceParams)
+            }
         }
     }
 
@@ -1135,12 +1150,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         // Model selection cards
         ModelDownloadManager.AVAILABLE_MODELS.forEach { model ->
+            // Read status fresh - use key to force recomposition when status changes
             val status = modelStatuses[model.id]
+            val isDownloaded = status?.isDownloaded == true
             // Check if this model's file is the active one (use filename for exact match)
             val isActiveModel = (inferenceStatus as? InferenceStatus.Loaded)?.modelPath?.endsWith(model.filename) == true
+            key(model.id, isDownloaded) {
             ModelCard(
                 model = model,
-                isDownloaded = status?.isDownloaded == true,
+                isDownloaded = isDownloaded,
                 isSelected = selectedModelId == model.id,
                 isActive = isActiveModel,
                 isLoading = isLoadingModel && selectedModelId == model.id,
@@ -1151,7 +1169,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     downloadManager.startBackgroundDownload(model.id)
                 },
                 onLoad = {
-                    status?.modelPath?.let { path ->
+                    // Re-check status at click time to avoid stale closures
+                    val currentStatus = downloadManager.getModelStatus(model.id)
+                    currentStatus.modelPath?.let { path ->
                         scope.launch {
                             InferenceManager.loadModel(path, settings.inferenceParams)
                         }
@@ -1171,6 +1191,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     downloadManager.cancelDownload(model.id)
                 }
             )
+            }
             Spacer(modifier = Modifier.height(8.dp))
         }
 
@@ -1627,7 +1648,17 @@ private fun ModelCard(
                     }
                 }
                 is DownloadState.Completed -> {
-                    // Will refresh status via LaunchedEffect
+                    // WorkManager says completed, but file might have been deleted
+                    // Show download button if file no longer exists
+                    if (isSelected && !isDownloaded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Download Model")
+                        }
+                    }
                 }
                 is DownloadState.Idle -> {
                     if (isSelected) {

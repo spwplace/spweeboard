@@ -27,6 +27,7 @@ import com.github.spwplace.spweeboard.settings.SettingsRepository
 import com.github.spwplace.spweeboard.settings.ThemeMode
 import com.github.spwplace.spweeboard.model.InferenceManager
 import com.github.spwplace.spweeboard.model.InterpretResult
+import com.github.spwplace.spweeboard.model.StreamingResult
 import com.github.spwplace.spweeboard.FeatureFlags
 import com.github.spwplace.spweeboard.SpweeboardApplication
 import uniffi.spweeboard_core.SpwGroundStore
@@ -50,13 +51,12 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     private val store = ViewModelStore()
 
-    // Coroutine scope for the recomposer
-    private var scope: CoroutineScope? = null
+    // Single coroutine scope for service lifecycle (recomposer, settings, etc.)
+    private var serviceScope: CoroutineScope? = null
     private var recomposer: Recomposer? = null
 
     // Settings for persistence
     private lateinit var settingsRepository: SettingsRepository
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
@@ -65,7 +65,7 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
     private val viewModel by lazy {
         KeyboardViewModel(
             onGroundSelected = { groundId ->
-                serviceScope.launch {
+                serviceScope?.launch {
                     settingsRepository.setDefaultGroundId(groundId)
                 }
             }
@@ -77,23 +77,25 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
+        // Create single coroutine scope for service lifecycle
+        serviceScope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
+
         // Initialize settings repository
         settingsRepository = SettingsRepository.getInstance(this)
 
         // Load saved ground selection
-        serviceScope.launch {
+        serviceScope?.launch {
             settingsRepository.settings.collect { settings ->
                 viewModel.initializeGround(settings.defaultGroundId)
             }
         }
 
-        // Create recomposer with our own scope and start it
-        scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
-        recomposer = Recomposer(scope!!.coroutineContext)
+        // Create recomposer with service scope and start it
+        recomposer = Recomposer(serviceScope!!.coroutineContext)
 
         // Must launch the recomposer to process state changes
-        scope!!.launch {
-            recomposer!!.runRecomposeAndApplyChanges()
+        serviceScope?.launch {
+            recomposer?.runRecomposeAndApplyChanges()
         }
     }
 
@@ -151,6 +153,8 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        // Cancel any in-progress streaming when keyboard hides
+        viewModel.cancelInterpretation()
         if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         }
@@ -160,9 +164,10 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
         viewModel.dispose()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
+        // Cancel recomposer first, then cancel its scope
         recomposer?.cancel()
-        scope?.cancel()
-        serviceScope.cancel()
+        serviceScope?.cancel()
+        serviceScope = null
         super.onDestroy()
     }
 }
@@ -182,6 +187,13 @@ class KeyboardViewModel(
     val loadingState = mutableStateOf<LoadingState>(LoadingState.Idle)
     val selectedGround = mutableStateOf(defaultGrounds.first())
 
+    // Streaming state
+    val streamingText = mutableStateOf<String?>(null)
+    val isThinking = mutableStateOf(false)
+
+    // Pending commit callback - called when interpretation completes after send
+    private var pendingCommit: ((String) -> Unit)? = null
+
     // Expression history - backed by Rust store for persistence
     val history: List<String> get() = groundStore?.listHistory(FeatureFlags.MAX_HISTORY_SIZE.toUInt())
         ?: emptyList()
@@ -195,7 +207,41 @@ class KeyboardViewModel(
         }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var interpretJob: kotlinx.coroutines.Job? = null
+    private var streamingJob: kotlinx.coroutines.Job? = null
+
+    init {
+        // Collect streaming results
+        streamingJob = scope.launch {
+            InferenceManager.streamingResults.collect { result ->
+                when (result) {
+                    is StreamingResult.Thinking -> {
+                        isThinking.value = true
+                    }
+                    is StreamingResult.Chunk -> {
+                        isThinking.value = false
+                        val current = streamingText.value ?: ""
+                        streamingText.value = current + result.text
+                    }
+                    is StreamingResult.Complete -> {
+                        isThinking.value = false
+                        interpretation.value = result.fullText
+                        streamingText.value = null
+                        loadingState.value = LoadingState.Idle
+                        // If there's a pending commit, execute it now
+                        pendingCommit?.invoke(result.fullText)
+                        pendingCommit = null
+                    }
+                    is StreamingResult.Error -> {
+                        isThinking.value = false
+                        interpretError.value = result.message
+                        streamingText.value = null
+                        loadingState.value = LoadingState.Idle
+                        pendingCommit = null
+                    }
+                }
+            }
+        }
+    }
 
     fun pushSymbol(symbol: String) {
         buffer.value += symbol
@@ -219,8 +265,36 @@ class KeyboardViewModel(
         parseState.value = ParseState.Empty
         interpretation.value = null
         interpretError.value = null
+        streamingText.value = null
+        isThinking.value = false
         loadingState.value = LoadingState.Idle
-        interpretJob?.cancel()
+        pendingCommit = null
+        InferenceManager.cancelInterpretation()
+    }
+
+    /**
+     * Initiate send: start interpretation and commit when complete.
+     * @param onCommit Called with the interpreted text when ready to commit
+     */
+    fun send(onCommit: (String) -> Unit) {
+        if (parseState.value != ParseState.Valid || buffer.value.isEmpty()) {
+            return
+        }
+
+        // If already loading, don't start another interpretation
+        if (loadingState.value.isLoading) {
+            return
+        }
+
+        // Check if model is loaded
+        if (!InferenceManager.isModelLoaded()) {
+            interpretError.value = "No model loaded"
+            return
+        }
+
+        // Set pending commit and start interpretation
+        pendingCommit = onCommit
+        interpretAsync(buffer.value, selectedGround.value)
     }
 
     fun commit() {
@@ -234,23 +308,20 @@ class KeyboardViewModel(
         parseState.value = ParseState.Empty
         interpretation.value = null
         interpretError.value = null
+        streamingText.value = null
+        isThinking.value = false
         loadingState.value = LoadingState.Idle
-        interpretJob?.cancel()
+        pendingCommit = null
     }
 
     /**
      * Recall an expression from history.
-     * @param index Visual index in the history list (UI-dependent ordering)
+     * @param expression The expression string to recall
      */
-    fun recall(index: Int) {
-        // Rust history is newest-first, so index 0 = newest
-        // The UI shows history newest-first, so indices align
-        val historyList = history
-        if (index in historyList.indices) {
-            buffer.value = historyList[index]
-            updateParseState()
-            isHistoryVisible.value = false
-        }
+    fun recall(expression: String) {
+        buffer.value = expression
+        updateParseState()
+        isHistoryVisible.value = false
     }
 
     /**
@@ -277,10 +348,9 @@ class KeyboardViewModel(
         selectedGround.value = ground
         // Persist ground selection
         onGroundSelected?.invoke(ground.id)
-        // Re-interpret with new ground
-        if (parseState.value == ParseState.Valid) {
-            interpretAsync(buffer.value, ground)
-        }
+        // Clear any previous interpretation since ground changed
+        interpretation.value = null
+        interpretError.value = null
     }
 
     /**
@@ -318,9 +388,8 @@ class KeyboardViewModel(
 
         parseState.value = if (isValid) ParseState.Valid else ParseState.Invalid
 
-        if (isValid) {
-            interpretAsync(input, selectedGround.value)
-        } else {
+        // Don't auto-interpret on every keystroke - only clear errors for invalid state
+        if (!isValid) {
             interpretation.value = null
             interpretError.value = null
             loadingState.value = LoadingState.Idle
@@ -328,17 +397,22 @@ class KeyboardViewModel(
     }
 
     /**
-     * Interpret SPW expression asynchronously.
-     * Cancels any pending interpretation and runs on IO thread.
+     * Interpret SPW expression asynchronously using streaming.
+     * Cancels any pending interpretation and starts a new streaming session.
      */
     private fun interpretAsync(input: String, ground: GroundOption) {
-        // Cancel previous job
-        interpretJob?.cancel()
+        // Cancel previous interpretation
+        InferenceManager.cancelInterpretation()
+
+        // Reset streaming state
+        streamingText.value = null
+        isThinking.value = false
+        interpretation.value = null
+        interpretError.value = null
 
         // Check if model is loaded first (quick check)
         loadingState.value = LoadingState.CheckingModel
         if (!InferenceManager.isModelLoaded()) {
-            interpretation.value = null
             interpretError.value = "No model loaded"
             loadingState.value = LoadingState.Idle
             return
@@ -346,32 +420,11 @@ class KeyboardViewModel(
 
         loadingState.value = LoadingState.Interpreting
 
-        interpretJob = scope.launch {
-            val groundName = if (ground.id != "none") ground.name else null
+        val groundName = if (ground.id != "none") ground.name else null
 
-            // Run interpretation on IO thread
-            val result = withContext(Dispatchers.IO) {
-                InferenceManager.interpret(input, groundName)
-            }
-
-            // Update UI on main thread
-            when (result) {
-                is InterpretResult.Success -> {
-                    interpretation.value = result.text
-                    interpretError.value = null
-                }
-                is InterpretResult.Error -> {
-                    interpretation.value = null
-                    interpretError.value = result.message
-                }
-                is InterpretResult.Cancelled -> {
-                    // Silent cancellation - just reset to idle
-                    interpretation.value = null
-                    interpretError.value = null
-                }
-            }
-            loadingState.value = LoadingState.Idle
-        }
+        // Start streaming interpretation (non-blocking)
+        // Results will be collected via the streamingResults flow
+        InferenceManager.interpretStreaming(input, groundName)
     }
 
     /**
@@ -379,15 +432,18 @@ class KeyboardViewModel(
      */
     fun cancelInterpretation() {
         if (FeatureFlags.cancelInterpretationEnabled && loadingState.value.isLoading) {
-            interpretJob?.cancel()
             InferenceManager.cancelInterpretation()
             loadingState.value = LoadingState.Idle
             interpretation.value = null
             interpretError.value = null
+            streamingText.value = null
+            isThinking.value = false
+            pendingCommit = null
         }
     }
 
     fun dispose() {
+        streamingJob?.cancel()
         scope.cancel()
     }
 }

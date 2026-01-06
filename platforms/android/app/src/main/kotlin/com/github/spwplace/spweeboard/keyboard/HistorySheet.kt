@@ -10,7 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 fun HistorySheet(
     isVisible: Boolean,
     history: List<String>,
-    onRecall: (Int) -> Unit,
+    onRecall: (String) -> Unit,
     onDismiss: () -> Unit,
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
@@ -121,12 +121,12 @@ fun HistorySheet(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Show most recent first
-                            itemsIndexed(history.reversed()) { reversedIndex, expression ->
-                                val actualIndex = history.size - 1 - reversedIndex
+                            // Show most recent first (history is already newest-first from Rust)
+                            items(history.size) { index ->
+                                val expression = history[index]
                                 HistoryItem(
                                     expression = expression,
-                                    onClick = { onRecall(actualIndex) }
+                                    onClick = { onRecall(expression) }
                                 )
                             }
                         }

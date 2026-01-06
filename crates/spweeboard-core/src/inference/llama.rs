@@ -15,7 +15,23 @@ use llama_cpp_2::sampling::LlamaSampler;
 use regex::Regex;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// Global singleton for the llama.cpp backend.
+/// llama.cpp only allows one backend initialization per process.
+static LLAMA_BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+
+/// Get or initialize the global llama.cpp backend.
+fn get_backend() -> Result<&'static LlamaBackend, LlamaError> {
+    let result = LLAMA_BACKEND.get_or_init(|| {
+        LlamaBackend::init().map_err(|e| format!("Backend init failed: {e}"))
+    });
+    match result {
+        Ok(backend) => Ok(backend),
+        Err(e) => Err(LlamaError::ModelLoad(e.clone())),
+    }
+}
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
@@ -29,6 +45,154 @@ static THINK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 #[must_use]
 pub fn strip_thinking(output: &str) -> String {
     THINK_REGEX.replace_all(output, "").trim().to_string()
+}
+
+// =============================================================================
+// Streaming Types
+// =============================================================================
+
+/// Phase of streaming generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamingPhase {
+    /// Model is generating `<think>...</think>` content (hidden from user).
+    Thinking,
+    /// Model is generating visible content.
+    Content,
+    /// Generation complete.
+    Complete,
+}
+
+/// A chunk of streamed output.
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    /// The text content of this chunk (empty during phase transitions).
+    pub text: String,
+    /// Current phase of generation.
+    pub phase: StreamingPhase,
+    /// Whether this is the final chunk.
+    pub is_final: bool,
+}
+
+/// Filters tokens to detect and buffer thinking blocks in real-time.
+///
+/// Accumulates output and detects `<think>...</think>` tags, allowing
+/// the caller to show a thinking indicator without exposing the content.
+struct ThinkingFilter {
+    /// Accumulated raw output.
+    buffer: String,
+    /// Whether we're currently inside `<think>...</think>`.
+    inside_thinking: bool,
+    /// Position of last emitted content in buffer.
+    emit_cursor: usize,
+}
+
+impl ThinkingFilter {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            inside_thinking: false,
+            emit_cursor: 0,
+        }
+    }
+
+    /// Feed a new token, returns (phase, optional text to emit).
+    ///
+    /// During thinking phase, returns `(Thinking, None)`.
+    /// During content phase, returns `(Content, Some(text))` with new content.
+    fn feed(&mut self, token: &str) -> (StreamingPhase, Option<String>) {
+        self.buffer.push_str(token);
+
+        // Check for <think> opening tag
+        if !self.inside_thinking {
+            if let Some(pos) = self.buffer[self.emit_cursor..].find("<think>") {
+                // Emit anything before the tag
+                let pre_tag = self.buffer[self.emit_cursor..self.emit_cursor + pos].to_string();
+                self.emit_cursor += pos + "<think>".len();
+                self.inside_thinking = true;
+
+                // If there's pre-tag content, emit it as Content first
+                // The next call will return Thinking phase
+                if !pre_tag.is_empty() {
+                    return (StreamingPhase::Content, Some(pre_tag));
+                }
+                return (StreamingPhase::Thinking, None);
+            }
+        }
+
+        // Check for </think> closing tag
+        if self.inside_thinking {
+            if let Some(pos) = self.buffer[self.emit_cursor..].find("</think>") {
+                self.emit_cursor += pos + "</think>".len();
+                self.inside_thinking = false;
+                return (StreamingPhase::Content, None);
+            }
+            // Still inside thinking - don't emit anything
+            return (StreamingPhase::Thinking, None);
+        }
+
+        // Normal content - emit the new content since last cursor
+        let to_emit = self.buffer[self.emit_cursor..].to_string();
+        self.emit_cursor = self.buffer.len();
+
+        if !to_emit.is_empty() {
+            (StreamingPhase::Content, Some(to_emit))
+        } else {
+            (StreamingPhase::Content, None)
+        }
+    }
+}
+
+/// Batches tokens into chunks for efficient FFI callbacks.
+///
+/// Emits chunks based on time interval (~50ms) or sentence boundaries.
+struct ChunkBatcher {
+    /// Accumulated text since last emit.
+    pending: String,
+    /// Time of last emit.
+    last_emit: Instant,
+    /// Target batch interval.
+    batch_interval: Duration,
+}
+
+impl ChunkBatcher {
+    fn new(batch_interval_ms: u64) -> Self {
+        Self {
+            pending: String::new(),
+            last_emit: Instant::now(),
+            batch_interval: Duration::from_millis(batch_interval_ms),
+        }
+    }
+
+    /// Add text, returns chunk if ready to emit.
+    ///
+    /// Emits when time threshold exceeded OR at sentence boundaries.
+    fn add(&mut self, text: &str) -> Option<String> {
+        self.pending.push_str(text);
+
+        let elapsed = self.last_emit.elapsed();
+        let has_sentence_end = self.pending.ends_with('.')
+            || self.pending.ends_with('!')
+            || self.pending.ends_with('?')
+            || self.pending.ends_with('\n');
+
+        // Emit if: time threshold exceeded OR sentence boundary (with min content)
+        if elapsed >= self.batch_interval || (has_sentence_end && self.pending.len() > 10) {
+            let chunk = std::mem::take(&mut self.pending);
+            self.last_emit = Instant::now();
+            Some(chunk)
+        } else {
+            None
+        }
+    }
+
+    /// Force emit any remaining content (call at end of generation).
+    fn flush(&mut self) -> Option<String> {
+        if !self.pending.is_empty() {
+            Some(std::mem::take(&mut self.pending))
+        } else {
+            None
+        }
+    }
 }
 
 /// Errors that can occur during LLM operations.
@@ -114,7 +278,6 @@ async fn resolve_model_path_with_progress(
 
 /// Internal state for the LLM engine.
 struct LlamaInner {
-    backend: LlamaBackend,
     model: LlamaModel,
 }
 
@@ -161,14 +324,13 @@ impl LlamaEngine {
 
         // Run blocking initialization in a separate thread
         let inner = tokio::task::spawn_blocking(move || {
-            let backend = LlamaBackend::init()
-                .map_err(|e| LlamaError::ModelLoad(format!("Backend init failed: {e}")))?;
+            let backend = get_backend()?;
 
             info!("Loading model: {}", path.display());
 
             let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
-            let model = LlamaModel::load_from_file(&backend, &path, &model_params)
+            let model = LlamaModel::load_from_file(backend, &path, &model_params)
                 .map_err(|e| LlamaError::ModelLoad(format!("Model load failed: {e}")))?;
 
             info!(
@@ -177,7 +339,7 @@ impl LlamaEngine {
                 model.n_params()
             );
 
-            Ok::<_, LlamaError>(LlamaInner { backend, model })
+            Ok::<_, LlamaError>(LlamaInner { model })
         })
         .await
         .map_err(|e| LlamaError::ModelLoad(format!("Task join error: {e}")))??;
@@ -322,9 +484,10 @@ impl LlamaEngine {
 
             info!("Loading new model: {}", path.display());
 
+            let backend = get_backend()?;
             let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
-            let model = LlamaModel::load_from_file(&inner_guard.backend, &path, &model_params)
+            let model = LlamaModel::load_from_file(backend, &path, &model_params)
                 .map_err(|e| LlamaError::ModelLoad(format!("Model load failed: {e}")))?;
 
             let vocab = model.n_vocab();
@@ -332,7 +495,7 @@ impl LlamaEngine {
 
             info!("New model loaded: vocab={}, params={}", vocab, params);
 
-            // Replace the model, keeping the same backend
+            // Replace the model
             inner_guard.model = model;
 
             Ok::<_, LlamaError>((vocab, params))
@@ -412,11 +575,12 @@ impl LlamaEngine {
             trace!(formatted = %formatted_prompt, "Formatted prompt");
 
             // Create context for this generation
+            let backend = get_backend()?;
             let ctx_params =
                 LlamaContextParams::default().with_n_ctx(std::num::NonZeroU32::new(n_ctx));
             let mut ctx = inner
                 .model
-                .new_context(&inner.backend, ctx_params)
+                .new_context(backend, ctx_params)
                 .map_err(|e| LlamaError::Inference(format!("Context creation failed: {e}")))?;
 
             // Tokenize
@@ -539,6 +703,228 @@ impl LlamaEngine {
 
         Ok(output)
     }
+
+    /// Streams generated tokens as chunked callbacks.
+    ///
+    /// This is true streaming - tokens are emitted as they're generated,
+    /// batched for efficiency (~50ms chunks or sentence boundaries).
+    ///
+    /// Thinking blocks (`<think>...</think>`) are detected and signaled via
+    /// the `StreamingPhase::Thinking` state, but their content is not emitted.
+    ///
+    /// # Arguments
+    /// * `prompt` - The prompt to generate from.
+    /// * `chunk_tx` - Channel sender to receive `StreamChunk` updates.
+    ///
+    /// # Errors
+    /// Returns error if inference fails or is cancelled.
+    pub async fn stream_chunked(
+        &self,
+        prompt: &str,
+        chunk_tx: mpsc::Sender<StreamChunk>,
+    ) -> Result<(), LlamaError> {
+        debug!(prompt_len = prompt.len(), "Starting streaming generation");
+        trace!(prompt = %prompt, "Full prompt");
+
+        // Reset cancellation token at start
+        self.reset_cancel();
+
+        let prompt = prompt.to_string();
+        let max_tokens = self.params.max_tokens;
+        let temperature = self.params.temperature;
+        let top_p = self.params.top_p;
+        let top_k = self.params.top_k;
+        let repeat_penalty = self.params.repeat_penalty;
+        let n_ctx = self.config.n_ctx;
+        let inner = self.inner.clone();
+        let cancel_token = self.cancel_token.clone();
+
+        // Run blocking generation in a separate thread
+        tokio::task::spawn_blocking(move || {
+            let inner = inner.lock().map_err(|e| {
+                LlamaError::Inference(format!("Failed to acquire lock: {e}"))
+            })?;
+
+            let start = std::time::Instant::now();
+
+            // Format as chat message if model has a template
+            let formatted_prompt = if let Ok(template) = inner.model.chat_template(None) {
+                let messages = vec![LlamaChatMessage::new("user".to_string(), prompt.clone())
+                    .map_err(|e| {
+                        LlamaError::Inference(format!("Message creation failed: {e}"))
+                    })?];
+
+                inner
+                    .model
+                    .apply_chat_template(&template, &messages, true)
+                    .map_err(|e| LlamaError::Inference(format!("Template apply failed: {e}")))?
+            } else {
+                prompt.clone()
+            };
+
+            trace!(formatted = %formatted_prompt, "Formatted prompt");
+
+            // Create context for this generation
+            let backend = get_backend()?;
+            let ctx_params =
+                LlamaContextParams::default().with_n_ctx(std::num::NonZeroU32::new(n_ctx));
+            let mut ctx = inner
+                .model
+                .new_context(backend, ctx_params)
+                .map_err(|e| LlamaError::Inference(format!("Context creation failed: {e}")))?;
+
+            // Tokenize
+            let tokens = inner
+                .model
+                .str_to_token(&formatted_prompt, AddBos::Always)
+                .map_err(|e| LlamaError::Inference(format!("Tokenization failed: {e}")))?;
+
+            debug!(token_count = tokens.len(), "Tokenized prompt");
+
+            // Create batch and add prompt tokens
+            let mut batch = LlamaBatch::new(n_ctx as usize, 1);
+            for (i, token) in tokens.iter().enumerate() {
+                let is_last = i == tokens.len() - 1;
+                batch
+                    .add(*token, i as i32, &[0], is_last)
+                    .map_err(|e| LlamaError::Inference(format!("Batch add failed: {e}")))?;
+            }
+
+            // Process prompt
+            ctx.decode(&mut batch)
+                .map_err(|e| LlamaError::Inference(format!("Prompt decode failed: {e}")))?;
+
+            // Set up sampler chain
+            let mut sampler = if temperature <= 0.0 {
+                LlamaSampler::greedy()
+            } else {
+                let mut samplers: Vec<LlamaSampler> = Vec::new();
+
+                if repeat_penalty > 1.0 {
+                    samplers.push(LlamaSampler::penalties(64, repeat_penalty, 0.0, 0.0));
+                }
+                if top_k > 0 {
+                    samplers.push(LlamaSampler::top_k(top_k as i32));
+                }
+                if top_p < 1.0 {
+                    samplers.push(LlamaSampler::top_p(top_p, 1));
+                }
+                samplers.push(LlamaSampler::temp(temperature));
+                samplers.push(LlamaSampler::dist(rand::random()));
+
+                LlamaSampler::chain_simple(samplers)
+            };
+
+            // Streaming state
+            let mut thinking_filter = ThinkingFilter::new();
+            let mut chunk_batcher = ChunkBatcher::new(50); // 50ms batches
+            let mut kv_pos = tokens.len() as i32;
+            let mut logits_idx = (tokens.len() - 1) as i32;
+            let mut was_cancelled = false;
+            let mut last_phase = StreamingPhase::Content;
+            let mut tokens_generated = 0u32;
+
+            // Token generation loop
+            for _ in 0..max_tokens {
+                // Check for cancellation
+                if cancel_token.load(Ordering::SeqCst) {
+                    info!("Streaming generation cancelled by user");
+                    was_cancelled = true;
+                    break;
+                }
+
+                let new_token = sampler.sample(&ctx, logits_idx);
+                sampler.accept(new_token);
+
+                // Check for end-of-generation
+                if inner.model.is_eog_token(new_token) {
+                    break;
+                }
+
+                // Decode token to string
+                if let Ok(token_str) = inner.model.token_to_str(new_token, Special::Tokenize) {
+                    // Process through thinking filter
+                    let (phase, emittable) = thinking_filter.feed(&token_str);
+
+                    // Notify phase transitions
+                    if phase != last_phase {
+                        let phase_chunk = StreamChunk {
+                            text: String::new(),
+                            phase,
+                            is_final: false,
+                        };
+                        let _ = chunk_tx.blocking_send(phase_chunk);
+                        last_phase = phase;
+                    }
+
+                    // Batch and emit content (only during Content phase)
+                    if let Some(text) = emittable {
+                        if let Some(chunk_text) = chunk_batcher.add(&text) {
+                            let chunk = StreamChunk {
+                                text: chunk_text,
+                                phase: StreamingPhase::Content,
+                                is_final: false,
+                            };
+                            let _ = chunk_tx.blocking_send(chunk);
+                        }
+                    }
+                }
+
+                // Prepare next iteration
+                batch.clear();
+                batch
+                    .add(new_token, kv_pos, &[0], true)
+                    .map_err(|e| LlamaError::Inference(format!("Batch add failed: {e}")))?;
+
+                ctx.decode(&mut batch)
+                    .map_err(|e| LlamaError::Inference(format!("Decode failed: {e}")))?;
+
+                kv_pos += 1;
+                logits_idx = 0;
+                tokens_generated += 1;
+            }
+
+            // Handle cancellation
+            if was_cancelled {
+                // Send error chunk for cancellation
+                let _ = chunk_tx.blocking_send(StreamChunk {
+                    text: "Generation cancelled".to_string(),
+                    phase: StreamingPhase::Complete,
+                    is_final: true,
+                });
+                return Err(LlamaError::Cancelled);
+            }
+
+            // Flush remaining content
+            if let Some(remaining) = chunk_batcher.flush() {
+                let chunk = StreamChunk {
+                    text: remaining,
+                    phase: StreamingPhase::Content,
+                    is_final: false,
+                };
+                let _ = chunk_tx.blocking_send(chunk);
+            }
+
+            // Send final completion chunk
+            let final_chunk = StreamChunk {
+                text: String::new(),
+                phase: StreamingPhase::Complete,
+                is_final: true,
+            };
+            let _ = chunk_tx.blocking_send(final_chunk);
+
+            let elapsed = start.elapsed();
+            info!(
+                elapsed_ms = elapsed.as_millis(),
+                tokens_generated,
+                "Streaming generation complete"
+            );
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| LlamaError::Inference(format!("Task join error: {e}")))?
+    }
 }
 
 impl InferenceEngine for LlamaEngine {
@@ -596,5 +982,108 @@ mod tests {
     fn test_strip_thinking_none() {
         let input = "Hello world";
         assert_eq!(strip_thinking(input), "Hello world");
+    }
+
+    // ==========================================================================
+    // ThinkingFilter tests
+    // ==========================================================================
+
+    #[test]
+    fn test_thinking_filter_no_thinking() {
+        let mut filter = ThinkingFilter::new();
+
+        let (phase, text) = filter.feed("Hello ");
+        assert_eq!(phase, StreamingPhase::Content);
+        assert_eq!(text, Some("Hello ".to_string()));
+
+        let (phase, text) = filter.feed("world!");
+        assert_eq!(phase, StreamingPhase::Content);
+        assert_eq!(text, Some("world!".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_filter_simple_thinking() {
+        let mut filter = ThinkingFilter::new();
+
+        // Content before thinking
+        let (phase, text) = filter.feed("Hello ");
+        assert_eq!(phase, StreamingPhase::Content);
+        assert_eq!(text, Some("Hello ".to_string()));
+
+        // Start thinking (tag split across tokens)
+        let (phase, text) = filter.feed("<think>");
+        assert_eq!(phase, StreamingPhase::Thinking);
+        assert_eq!(text, None);
+
+        // Inside thinking - no content emitted
+        let (phase, text) = filter.feed("internal thoughts");
+        assert_eq!(phase, StreamingPhase::Thinking);
+        assert_eq!(text, None);
+
+        // End thinking
+        let (phase, text) = filter.feed("</think>");
+        assert_eq!(phase, StreamingPhase::Content);
+        assert_eq!(text, None);
+
+        // Content after thinking
+        let (phase, text) = filter.feed(" world!");
+        assert_eq!(phase, StreamingPhase::Content);
+        assert_eq!(text, Some(" world!".to_string()));
+    }
+
+    #[test]
+    fn test_thinking_filter_content_before_tag() {
+        let mut filter = ThinkingFilter::new();
+
+        // Token contains content + start of thinking
+        let (phase, text) = filter.feed("Hi <think>thoughts");
+        assert_eq!(phase, StreamingPhase::Thinking);
+        assert_eq!(text, Some("Hi ".to_string()));
+    }
+
+    // ==========================================================================
+    // ChunkBatcher tests
+    // ==========================================================================
+
+    #[test]
+    fn test_chunk_batcher_time_based() {
+        let mut batcher = ChunkBatcher::new(50);
+
+        // First add - too soon
+        let chunk = batcher.add("Hello ");
+        assert!(chunk.is_none());
+
+        // Simulate time passage by manipulating internal state
+        batcher.last_emit = Instant::now() - Duration::from_millis(60);
+
+        // Should emit now
+        let chunk = batcher.add("world");
+        assert_eq!(chunk, Some("Hello world".to_string()));
+    }
+
+    #[test]
+    fn test_chunk_batcher_sentence_boundary() {
+        let mut batcher = ChunkBatcher::new(50);
+
+        // Build up content
+        batcher.add("This is a ");
+        let chunk = batcher.add("sentence.");
+
+        // Should emit at sentence boundary (if content > 10 chars)
+        assert_eq!(chunk, Some("This is a sentence.".to_string()));
+    }
+
+    #[test]
+    fn test_chunk_batcher_flush() {
+        let mut batcher = ChunkBatcher::new(50);
+
+        batcher.add("partial");
+        let chunk = batcher.flush();
+
+        assert_eq!(chunk, Some("partial".to_string()));
+
+        // Second flush should return None
+        let chunk = batcher.flush();
+        assert!(chunk.is_none());
     }
 }

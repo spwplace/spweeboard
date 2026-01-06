@@ -24,6 +24,7 @@ use crate::ground::Ground;
 use crate::compiler::PromptCompiler;
 use crate::inference::InferenceEngine;
 use crate::buffer::ExpressionBuffer;
+use tracing::{trace, debug, info, instrument};
 
 /// The main keyboard engine coordinating SPW parsing, ground management, and LLM inference.
 pub struct SpweeboardEngine<I: InferenceEngine> {
@@ -35,7 +36,9 @@ pub struct SpweeboardEngine<I: InferenceEngine> {
 
 impl<I: InferenceEngine> SpweeboardEngine<I> {
     /// Creates a new engine with the given inference backend.
+    #[instrument(skip(inference), level = "debug")]
     pub fn new(inference: I) -> Self {
+        info!("Creating new SpweeboardEngine");
         Self {
             buffer: ExpressionBuffer::new(),
             grounds: Vec::new(),
@@ -45,17 +48,24 @@ impl<I: InferenceEngine> SpweeboardEngine<I> {
     }
 
     /// Pushes a symbol or character to the current expression buffer.
+    #[instrument(skip(self), level = "trace")]
     pub fn push(&mut self, input: char) {
+        trace!(input = %input, "Pushing character to buffer");
         self.buffer.push(input);
+        trace!(buffer = ?self.buffer.raw(), "Buffer state after push");
     }
 
     /// Removes the last symbol or character from the buffer.
+    #[instrument(skip(self), level = "trace")]
     pub fn pop(&mut self) {
+        trace!("Popping from buffer");
         self.buffer.pop();
     }
 
     /// Clears the current expression buffer.
+    #[instrument(skip(self), level = "debug")]
     pub fn clear(&mut self) {
+        debug!("Clearing buffer");
         self.buffer.clear();
     }
 
@@ -65,43 +75,66 @@ impl<I: InferenceEngine> SpweeboardEngine<I> {
     }
 
     /// Loads a ground context. Grounds compose according to SPW operator metaphysics.
+    #[instrument(skip(self), level = "debug")]
     pub fn load_ground(&mut self, ground: Ground) {
+        debug!(ground = ?ground, "Loading ground");
         self.grounds.push(ground);
     }
 
     /// Clears all loaded grounds.
+    #[instrument(skip(self), level = "debug")]
     pub fn clear_grounds(&mut self) {
+        debug!("Clearing all grounds");
         self.grounds.clear();
     }
 
     /// Returns the composed ground (all grounds merged by operator metaphysics).
     pub fn composed_ground(&self) -> Option<Ground> {
-        Ground::compose(&self.grounds)
+        let composed = Ground::compose(&self.grounds);
+        trace!(composed = ?composed, "Composed ground");
+        composed
     }
 
     /// Compiles the current expression against loaded grounds into an LLM prompt.
+    #[instrument(skip(self), level = "debug")]
     pub fn compile_prompt(&self) -> Option<String> {
         let expr = self.buffer.current()?;
+        debug!(expression = ?expr, "Compiling prompt for expression");
         let ground = self.composed_ground();
-        Some(self.compiler.compile(expr, ground.as_ref()))
+        let prompt = self.compiler.compile(expr, ground.as_ref());
+        trace!(prompt_len = prompt.len(), "Compiled prompt");
+        debug!(prompt = %prompt, "Full compiled prompt");
+        Some(prompt)
     }
 
     /// Generates natural language from the current expression (blocking).
+    #[instrument(skip(self), level = "info")]
     pub async fn generate(&self) -> Result<String, I::Error> {
+        info!("Starting generation");
         let prompt = self.compile_prompt().unwrap_or_default();
-        self.inference.generate(&prompt).await
+        trace!(prompt = %prompt, "Sending prompt to inference engine");
+        let result = self.inference.generate(&prompt).await;
+        match &result {
+            Ok(output) => info!(output_len = output.len(), "Generation complete"),
+            Err(_) => info!("Generation failed"),
+        }
+        result
     }
 
     /// Streams natural language tokens from the current expression.
+    #[instrument(skip(self), level = "info")]
     pub async fn stream(
         &self,
     ) -> Result<tokio::sync::mpsc::Receiver<String>, I::Error> {
+        info!("Starting streaming generation");
         let prompt = self.compile_prompt().unwrap_or_default();
         self.inference.stream(&prompt).await
     }
 
     /// Commits the current expression to history and clears the buffer.
+    #[instrument(skip(self), level = "debug")]
     pub fn commit(&mut self) {
+        debug!("Committing expression to history");
         self.buffer.commit();
     }
 }

@@ -2,6 +2,7 @@
 
 use crate::ground::Ground;
 use crate::spw::Expression;
+use tracing::{trace, debug, instrument};
 
 /// Compiles SPW expressions into LLM prompts with in-context learning.
 #[derive(Debug, Clone)]
@@ -29,94 +30,50 @@ impl PromptCompiler {
 
     /// Compiles an expression with optional ground into a prompt.
     #[must_use]
+    #[instrument(skip(self, expression, ground), level = "debug")]
     pub fn compile(&self, expression: &Expression, ground: Option<&Ground>) -> String {
+        let expr_str = expression.render();
+        debug!(expression = %expr_str, has_ground = ground.is_some(), "Compiling prompt");
+
         let mut prompt = String::with_capacity(2048);
 
         // System instruction
-        prompt.push_str(SYSTEM_INSTRUCTION);
+        prompt.push_str(system_instruction());
+        trace!("Added system instruction");
 
         // In-context learning examples
         if self.include_examples {
             prompt.push_str("\n\n");
-            prompt.push_str(EXAMPLES);
+            prompt.push_str(examples());
+            trace!("Added ICL examples");
         }
 
         // Ground context
-        prompt.push_str("\n\n<ground>\n");
-        if let Some(g) = ground {
-            prompt.push_str(&g.render());
-        } else {
-            prompt.push_str("(none)");
-        }
-        prompt.push_str("\n</ground>");
+        let ground_str = ground.map(|g| g.render()).unwrap_or_else(|| "(none)".to_string());
+        trace!(ground = %ground_str, "Ground context");
 
-        // Expression to interpret
-        prompt.push_str("\n\n<expression>\n");
-        prompt.push_str(&expression.render());
-        prompt.push_str("\n</expression>");
-
-        // Task instruction
+        // Final interpretation request - with strong steering toward answering only this query
         prompt.push_str("\n\n");
-        prompt.push_str(TASK_INSTRUCTION);
+        prompt.push_str("Now interpret the following expression. Provide ONLY a single poetic interpretation, nothing else:\n\n");
+        prompt.push_str(&format!("SPW: {}\nGround: {}\nInterpretation:", expr_str, ground_str));
 
+        debug!(prompt_len = prompt.len(), "Prompt compiled");
         prompt
     }
 }
 
-/// System instruction defining the interpreter role.
-const SYSTEM_INSTRUCTION: &str = r#"<system>
-You interpret SPW symbolic expressions as natural language. SPW encodes cognitive operations — treat symbols as creative constraints that shape meaning, not words to substitute.
+/// Full prompt template loaded from prompt.txt - edit that file to change the prompt.
+const PROMPT_TEMPLATE: &str = include_str!("prompt.txt");
 
-Symbol lore (order matters, left-to-right flow):
-~ potential (becoming)    # vibration (resonance)   . ground (foundation)
-? wonder (inquiry)        ! action (assertion)      * value (significance)
-& subject (agent)         @ perspective (viewpoint) <> concept (abstraction)
-() scene (situation)      [] mode (manner)          {} direction (intent)
-^ integration (synthesis)
+/// System instruction (everything before ---EXAMPLES---).
+fn system_instruction() -> &'static str {
+    PROMPT_TEMPLATE.split("---EXAMPLES---").next().unwrap().trim()
+}
 
-Nesting: brackets contain and scope. Order transforms: &@ = "from subject's view", @& = "the subject being viewed".
-</system>"#;
-
-/// In-context learning examples (~800 tokens budget).
-const EXAMPLES: &str = r#"<examples>
-## Order Semantics
-&@ → "from my perspective as the subject"
-@& → "the subject I'm viewing"
-?! → "wondering, then acting"
-!? → "acting, then questioning what happened"
-
-## Bracket Nesting
-&[work] → "the subject in work mode"
-[work]& → "work mode gives rise to the subject"
-?{&.} → "wondering about who is foundational, directed inquiry"
-{?}.& → "directed wondering grounds the subject"
-
-## Ground Composition
-ground_a: @[craft]    ground_b: .{utility}
-composed: @[craft].{utility} → "craftsperson's view grounded in usefulness"
-
-ground_a: &~    ground_b: *^
-composed: &~*^ → "subject becoming through value integration"
-
-## Expression Against Ground
-ground: .{software}
-expr: ?&*
-output: "In software: wondering who finds this valuable"
-
-ground: @[poetry]~
-expr: !<rhythm>#
-output: "From poetry's becoming perspective: asserting the concept of rhythm's resonance"
-
-## Recursive Grounds
-ground: ?{&@.}  (wondering about subject-perspective-ground flow)
-expr: !*
-output: "Within that wondering: asserting value"
-</examples>"#;
-
-/// Task instruction for generation.
-const TASK_INSTRUCTION: &str = r#"<task>
-Produce natural language that embodies this expression against the ground. Be creative and concise. Match the cognitive tone implied by the symbols (? = wondering, ! = assertive, ~ = emergent, etc.). Do not explain the symbols — just interpret.
-</task>"#;
+/// In-context learning examples (everything after ---EXAMPLES---).
+fn examples() -> &'static str {
+    PROMPT_TEMPLATE.split("---EXAMPLES---").nth(1).unwrap().trim()
+}
 
 #[cfg(test)]
 mod tests {
@@ -128,10 +85,12 @@ mod tests {
         let expr = parse("&@").unwrap();
         let prompt = PromptCompiler::default().compile(&expr, None);
 
-        assert!(prompt.contains("<system>"));
-        assert!(prompt.contains("<expression>"));
-        assert!(prompt.contains("&@"));
-        assert!(prompt.contains("<task>"));
+        // Check for system instruction content
+        assert!(prompt.contains("SPW interprets symbolic expressions"));
+        // Check for few-shot examples
+        assert!(prompt.contains("SPW: &@\nGround: (none)\nInterpretation:"));
+        // Check for final request format
+        assert!(prompt.contains("SPW: &@\nGround: (none)\nInterpretation:"));
     }
 
     #[test]
@@ -141,7 +100,7 @@ mod tests {
         let prompt = PromptCompiler::default().compile(&expr, Some(&ground));
 
         assert!(prompt.contains("@[work]"));
-        assert!(prompt.contains("?*"));
+        assert!(prompt.contains("SPW: ?*"));
     }
 
     #[test]
@@ -149,7 +108,9 @@ mod tests {
         let expr = parse("&@").unwrap();
         let prompt = PromptCompiler::minimal().compile(&expr, None);
 
-        assert!(!prompt.contains("<examples>"));
-        assert!(prompt.contains("<system>"));
+        // Should not contain the example interpretations
+        assert!(!prompt.contains("From where I stand"));
+        // Should still contain system instruction
+        assert!(prompt.contains("SPW interprets symbolic expressions"));
     }
 }

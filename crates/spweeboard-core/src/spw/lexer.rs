@@ -5,6 +5,7 @@ use crate::spw::token::{BracketType, Span, Token, TokenKind};
 use compact_str::CompactString;
 use std::iter::Peekable;
 use std::str::CharIndices;
+use tracing::debug;
 
 /// Lexer that tokenizes SPW input strings.
 pub struct Lexer<'src> {
@@ -17,6 +18,7 @@ impl<'src> Lexer<'src> {
     /// Creates a new lexer for the given source string.
     #[must_use]
     pub fn new(source: &'src str) -> Self {
+        debug!(len = source.len(), "Lexing SPW");
         Self {
             source,
             chars: source.char_indices().peekable(),

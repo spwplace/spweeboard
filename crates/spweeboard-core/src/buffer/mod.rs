@@ -9,6 +9,7 @@ pub use history::History;
 
 use crate::spw::{parse, Expression, ParseError};
 use compact_str::CompactString;
+use tracing::{trace, debug, instrument};
 
 /// Buffer for composing SPW expressions incrementally.
 #[derive(Debug, Clone, Default)]
@@ -108,19 +109,24 @@ impl ExpressionBuffer {
     }
 
     /// Re-parses the raw input.
+    #[instrument(skip(self), level = "trace")]
     fn reparse(&mut self) {
+        trace!(raw = %self.raw, "Reparsing buffer");
         if self.raw.is_empty() {
             self.parsed = Some(Expression::new());
             self.error = None;
+            trace!("Empty buffer, created empty expression");
             return;
         }
 
         match parse(&self.raw) {
             Ok(expr) => {
+                debug!(expression = ?expr, "Parse successful");
                 self.parsed = Some(expr);
                 self.error = None;
             }
             Err(e) => {
+                debug!(error = ?e, "Parse failed");
                 // Keep partial parse if possible
                 self.parsed = None;
                 self.error = Some(e);

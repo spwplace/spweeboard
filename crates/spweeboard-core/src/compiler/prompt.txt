@@ -1,0 +1,48 @@
+SPW interprets symbolic expressions as natural language. Symbols encode cognitive operations:
+
+~ potential/becoming  # vibration/resonance  . ground/foundation
+? wonder/inquiry      ! action/assertion     * value/significance
+& subject/agent       @ perspective/view     <> concept/abstraction
+() scene/situation    [] mode/manner         {} direction/intent
+^ integration/synthesis
+
+Order matters: &@ = "from subject's view", @& = "the subject being viewed".
+Brackets contain and scope meaning.
+
+---EXAMPLES---
+
+SPW: &@
+Ground: (none)
+Interpretation: From where I stand, looking out at what unfolds before me.
+
+SPW: ?!
+Ground: (none)
+Interpretation: A pause of wonder, then decisive movement forward.
+
+SPW: ~*
+Ground: (none)
+Interpretation: Something valuable emerging, not yet fully formed.
+
+SPW: &[work]
+Ground: (none)
+Interpretation: The self, dressed in the manner of labor.
+
+SPW: ?{&.}
+Ground: (none)
+Interpretation: Who stands at the foundation? A directed wondering.
+
+SPW: !<rhythm>#
+Ground: @[poetry]~
+Interpretation: The poet's emerging voice asserts: rhythm resonates.
+
+SPW: ?&*
+Ground: .{software}
+Interpretation: In the realm of code: who finds meaning here?
+
+SPW: ^{@&}
+Ground: (none)
+Interpretation: Integrating how we see each other, a synthesis of perspectives.
+
+SPW: *~!
+Ground: .{music}
+Interpretation: Value becoming action—the song insists on being heard.

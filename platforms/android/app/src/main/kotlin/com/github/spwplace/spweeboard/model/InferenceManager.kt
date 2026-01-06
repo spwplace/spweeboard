@@ -2,6 +2,7 @@ package com.github.spwplace.spweeboard.model
 
 import android.content.Context
 import android.util.Log
+import com.github.spwplace.spweeboard.settings.InferenceParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,8 +47,13 @@ object InferenceManager {
     /**
      * Load a model from the given path.
      * Should be called from a coroutine.
+     * @param modelPath Path to the GGUF model file
+     * @param params Optional inference parameters (uses defaults if not provided)
      */
-    suspend fun loadModel(modelPath: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun loadModel(
+        modelPath: String,
+        params: InferenceParams = InferenceParams()
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         val eng = engine ?: return@withContext Result.failure(Exception("Engine not initialized"))
 
         _isLoading.value = true
@@ -60,8 +66,11 @@ object InferenceManager {
                 nCtx = 2048u,
                 useGpu = true,
                 nGpuLayers = 99u,
-                maxTokens = 128u,
-                temperature = 0.7f
+                maxTokens = params.maxTokens.toUInt(),
+                temperature = params.temperature,
+                topP = params.topP,
+                topK = params.topK.toUInt(),
+                repeatPenalty = params.repeatPenalty
             )
 
             val result = eng.loadModel(config)
@@ -97,6 +106,18 @@ object InferenceManager {
     }
 
     /**
+     * Cancel any in-progress interpretation.
+     */
+    fun cancelInterpretation() {
+        try {
+            engine?.cancel()
+            Log.i(TAG, "Interpretation cancelled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel interpretation", e)
+        }
+    }
+
+    /**
      * Interpret an SPW expression using the LLM.
      * Returns a result with either the interpretation or an error message.
      */
@@ -119,8 +140,14 @@ object InferenceManager {
                 InterpretResult.Success(result.text!!)
             } else {
                 val error = result.error ?: "Inference returned no result"
-                Log.w(TAG, "Inference failed: $error")
-                InterpretResult.Error(error)
+                // Check if this was a cancellation
+                if (error.contains("cancelled", ignoreCase = true)) {
+                    Log.i(TAG, "Inference was cancelled")
+                    InterpretResult.Cancelled
+                } else {
+                    Log.w(TAG, "Inference failed: $error")
+                    InterpretResult.Error(error)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Inference exception", e)
@@ -163,4 +190,5 @@ sealed class InferenceStatus {
 sealed class InterpretResult {
     data class Success(val text: String) : InterpretResult()
     data class Error(val message: String) : InterpretResult()
+    data object Cancelled : InterpretResult()
 }

@@ -750,6 +750,48 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -789,28 +831,72 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_spweeboard_core_fn_method_spwbuffer_push(`ptr`: Pointer,`c`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_spweeboard_core_fn_clone_spwgroundstore(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_spweeboard_core_fn_free_spwgroundstore(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_spweeboard_core_fn_constructor_spwgroundstore_open(`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_clear_history(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_delete(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_history_count(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_list(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_list_history(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_load(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_push_history(`ptr`: Pointer,`expression`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_recall_history(`ptr`: Pointer,`index`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwgroundstore_save(`ptr`: Pointer,`ground`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_clone_spwinferenceengine(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_spweeboard_core_fn_free_spwinferenceengine(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_spweeboard_core_fn_constructor_spwinferenceengine_new(uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
+    fun uniffi_spweeboard_core_fn_method_spwinferenceengine_cancel(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_generate_raw(`ptr`: Pointer,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_get_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_interpret(`ptr`: Pointer,`spwInput`: RustBuffer.ByValue,`groundName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_method_spwinferenceengine_is_cancelled(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_load_model(`ptr`: Pointer,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_method_spwinferenceengine_unload_model(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_spweeboard_core_fn_func_available_models(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_func_default_model_id(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_func_get_brackets(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_func_get_model_by_id(`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_func_get_symbols(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_func_interpret_spw_simple(`input`: RustBuffer.ByValue,`groundName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_func_parse_spw(`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_spweeboard_core_fn_func_preset_grounds(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_spweeboard_core_fn_func_validate_spw(`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_spweeboard_core_fn_func_validate_spw_ground(`spw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_spweeboard_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_spweeboard_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -923,11 +1009,25 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_spweeboard_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_spweeboard_core_checksum_func_available_models(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_func_default_model_id(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_func_get_brackets(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_func_get_model_by_id(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_func_get_symbols(
+    ): Short
     fun uniffi_spweeboard_core_checksum_func_interpret_spw_simple(
     ): Short
     fun uniffi_spweeboard_core_checksum_func_parse_spw(
     ): Short
+    fun uniffi_spweeboard_core_checksum_func_preset_grounds(
+    ): Short
     fun uniffi_spweeboard_core_checksum_func_validate_spw(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_func_validate_spw_ground(
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwbuffer_clear(
     ): Short
@@ -943,17 +1043,43 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwbuffer_push(
     ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_clear_history(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_count(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_delete(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_history_count(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_list(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_list_history(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_load(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_push_history(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_recall_history(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwgroundstore_save(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_cancel(
+    ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_generate_raw(
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_get_status(
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret(
     ): Short
+    fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_is_cancelled(
+    ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_load_model(
     ): Short
     fun uniffi_spweeboard_core_checksum_method_spwinferenceengine_unload_model(
     ): Short
     fun uniffi_spweeboard_core_checksum_constructor_spwbuffer_new(
+    ): Short
+    fun uniffi_spweeboard_core_checksum_constructor_spwgroundstore_open(
     ): Short
     fun uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new(
     ): Short
@@ -974,13 +1100,34 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_spweeboard_core_checksum_func_available_models() != 15893.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_func_default_model_id() != 53189.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_func_get_brackets() != 30323.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_func_get_model_by_id() != 9341.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_func_get_symbols() != 53678.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_spweeboard_core_checksum_func_interpret_spw_simple() != 59341.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_func_parse_spw() != 29358.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_spweeboard_core_checksum_func_preset_grounds() != 16424.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_spweeboard_core_checksum_func_validate_spw() != 12382.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_func_validate_spw_ground() != 42439.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_method_spwbuffer_clear() != 26550.toShort()) {
@@ -1004,6 +1151,39 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_spweeboard_core_checksum_method_spwbuffer_push() != 7803.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_clear_history() != 38262.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_count() != 2582.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_delete() != 5311.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_history_count() != 15523.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_list() != 10155.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_list_history() != 46550.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_load() != 3344.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_push_history() != 8982.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_recall_history() != 42070.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwgroundstore_save() != 47581.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_cancel() != 62228.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_generate_raw() != 65236.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1013,6 +1193,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_interpret() != 17813.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_is_cancelled() != 38804.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_spweeboard_core_checksum_method_spwinferenceengine_load_model() != 562.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1020,6 +1203,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_constructor_spwbuffer_new() != 46986.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_spweeboard_core_checksum_constructor_spwgroundstore_open() != 19045.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new() != 38651.toShort()) {
@@ -1092,6 +1278,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 
     override fun write(value: UInt, buf: ByteBuffer) {
         buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterULong: FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8UL
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
     }
 }
 
@@ -1737,10 +1946,468 @@ public object FfiConverterTypeSpwBuffer: FfiConverter<SpwBuffer, Pointer> {
 
 
 /**
+ * Persistent storage for ground contexts.
+ * Thread-safe wrapper around SQLite-backed GroundStore.
+ */
+public interface SpwGroundStoreInterface {
+    
+    /**
+     * Clears all history entries.
+     */
+    fun `clearHistory`()
+    
+    /**
+     * Returns the number of grounds in the store.
+     */
+    fun `count`(): kotlin.UInt
+    
+    /**
+     * Deletes a ground by ID.
+     */
+    fun `delete`(`id`: kotlin.String): kotlin.Boolean
+    
+    /**
+     * Returns the number of history entries.
+     */
+    fun `historyCount`(): kotlin.UInt
+    
+    /**
+     * Lists all grounds.
+     */
+    fun `list`(): List<SpwGround>
+    
+    /**
+     * Lists history entries (newest first).
+     *
+     * Pass 0 for limit to get all entries (up to 100).
+     */
+    fun `listHistory`(`limit`: kotlin.UInt): List<kotlin.String>
+    
+    /**
+     * Loads a ground by ID.
+     */
+    fun `load`(`id`: kotlin.String): SpwGround?
+    
+    /**
+     * Pushes an expression to history.
+     *
+     * Avoids consecutive duplicates.
+     */
+    fun `pushHistory`(`expression`: kotlin.String)
+    
+    /**
+     * Recalls a specific history entry by index (0 = newest).
+     */
+    fun `recallHistory`(`index`: kotlin.UInt): kotlin.String?
+    
+    /**
+     * Saves a ground to the store (insert or update).
+     */
+    fun `save`(`ground`: SpwGround): SpwGroundResult
+    
+    companion object
+}
+
+/**
+ * Persistent storage for ground contexts.
+ * Thread-safe wrapper around SQLite-backed GroundStore.
+ */
+open class SpwGroundStore: Disposable, AutoCloseable, SpwGroundStoreInterface {
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_free_spwgroundstore(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_clone_spwgroundstore(pointer!!, status)
+        }
+    }
+
+    
+    /**
+     * Clears all history entries.
+     */override fun `clearHistory`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_clear_history(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Returns the number of grounds in the store.
+     */override fun `count`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_count(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Deletes a ground by ID.
+     */override fun `delete`(`id`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_delete(
+        it, FfiConverterString.lower(`id`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Returns the number of history entries.
+     */override fun `historyCount`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_history_count(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Lists all grounds.
+     */override fun `list`(): List<SpwGround> {
+            return FfiConverterSequenceTypeSpwGround.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_list(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Lists history entries (newest first).
+     *
+     * Pass 0 for limit to get all entries (up to 100).
+     */override fun `listHistory`(`limit`: kotlin.UInt): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_list_history(
+        it, FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Loads a ground by ID.
+     */override fun `load`(`id`: kotlin.String): SpwGround? {
+            return FfiConverterOptionalTypeSpwGround.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_load(
+        it, FfiConverterString.lower(`id`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Pushes an expression to history.
+     *
+     * Avoids consecutive duplicates.
+     */override fun `pushHistory`(`expression`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_push_history(
+        it, FfiConverterString.lower(`expression`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Recalls a specific history entry by index (0 = newest).
+     */override fun `recallHistory`(`index`: kotlin.UInt): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_recall_history(
+        it, FfiConverterUInt.lower(`index`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Saves a ground to the store (insert or update).
+     */override fun `save`(`ground`: SpwGround): SpwGroundResult {
+            return FfiConverterTypeSpwGroundResult.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwgroundstore_save(
+        it, FfiConverterTypeSpwGround.lower(`ground`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+    companion object {
+        
+    /**
+     * Opens or creates a ground store at the given path.
+     */
+    @Throws(SpwException::class) fun `open`(`path`: kotlin.String): SpwGroundStore {
+            return FfiConverterTypeSpwGroundStore.lift(
+    uniffiRustCallWithError(SpwException) { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_constructor_spwgroundstore_open(
+        FfiConverterString.lower(`path`),_status)
+}
+    )
+    }
+    
+
+        
+    }
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwGroundStore: FfiConverter<SpwGroundStore, Pointer> {
+
+    override fun lower(value: SpwGroundStore): Pointer {
+        return value.uniffiClonePointer()
+    }
+
+    override fun lift(value: Pointer): SpwGroundStore {
+        return SpwGroundStore(value)
+    }
+
+    override fun read(buf: ByteBuffer): SpwGroundStore {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: SpwGroundStore) = 8UL
+
+    override fun write(value: SpwGroundStore, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
  * LLM inference engine for SPW interpretation.
  * Thread-safe wrapper around the llama.cpp backend.
  */
 public interface SpwInferenceEngineInterface {
+    
+    /**
+     * Cancels any in-progress interpretation.
+     *
+     * This will cause the current generation to stop at the next token
+     * and return a cancellation error.
+     */
+    fun `cancel`()
     
     /**
      * Generates raw text from a prompt (for advanced use).
@@ -1757,6 +2424,11 @@ public interface SpwInferenceEngineInterface {
      * Returns the generated interpretation text.
      */
     fun `interpret`(`spwInput`: kotlin.String, `groundName`: kotlin.String?): SpwInferenceResult
+    
+    /**
+     * Returns whether a cancellation is pending.
+     */
+    fun `isCancelled`(): kotlin.Boolean
     
     /**
      * Loads a model from a GGUF file path.
@@ -1869,6 +2541,23 @@ open class SpwInferenceEngine: Disposable, AutoCloseable, SpwInferenceEngineInte
 
     
     /**
+     * Cancels any in-progress interpretation.
+     *
+     * This will cause the current generation to stop at the next token
+     * and return a cancellation error.
+     */override fun `cancel`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwinferenceengine_cancel(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
      * Generates raw text from a prompt (for advanced use).
      */override fun `generateRaw`(`prompt`: kotlin.String): SpwInferenceResult {
             return FfiConverterTypeSpwInferenceResult.lift(
@@ -1907,6 +2596,21 @@ open class SpwInferenceEngine: Disposable, AutoCloseable, SpwInferenceEngineInte
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwinferenceengine_interpret(
         it, FfiConverterString.lower(`spwInput`),FfiConverterOptionalString.lower(`groundName`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Returns whether a cancellation is pending.
+     */override fun `isCancelled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_method_spwinferenceengine_is_cancelled(
+        it, _status)
 }
     }
     )
@@ -1982,6 +2686,61 @@ public object FfiConverterTypeSpwInferenceEngine: FfiConverter<SpwInferenceEngin
 
 
 /**
+ * Returns information about SPW bracket types.
+ */
+data class SpwBracketInfo (
+    /**
+     * The opening bracket character.
+     */
+    var `open`: kotlin.String, 
+    /**
+     * The closing bracket character.
+     */
+    var `close`: kotlin.String, 
+    /**
+     * The semantic name (e.g., "concept").
+     */
+    var `name`: kotlin.String, 
+    /**
+     * The deeper meaning.
+     */
+    var `lore`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwBracketInfo: FfiConverterRustBuffer<SpwBracketInfo> {
+    override fun read(buf: ByteBuffer): SpwBracketInfo {
+        return SpwBracketInfo(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpwBracketInfo) = (
+            FfiConverterString.allocationSize(value.`open`) +
+            FfiConverterString.allocationSize(value.`close`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`lore`)
+    )
+
+    override fun write(value: SpwBracketInfo, buf: ByteBuffer) {
+            FfiConverterString.write(value.`open`, buf)
+            FfiConverterString.write(value.`close`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`lore`, buf)
+    }
+}
+
+
+
+/**
  * Engine status for UI feedback.
  */
 data class SpwEngineStatus (
@@ -2030,6 +2789,116 @@ public object FfiConverterTypeSpwEngineStatus: FfiConverterRustBuffer<SpwEngineS
 
 
 /**
+ * FFI-friendly ground representation.
+ */
+data class SpwGround (
+    /**
+     * Unique identifier.
+     */
+    var `id`: kotlin.String, 
+    /**
+     * Human-readable name.
+     */
+    var `name`: kotlin.String, 
+    /**
+     * Content type (natural or spw).
+     */
+    var `contentType`: SpwGroundContentType, 
+    /**
+     * The ground content (natural language text or SPW expression).
+     */
+    var `content`: kotlin.String, 
+    /**
+     * Human-readable description of what this ground does.
+     */
+    var `description`: kotlin.String, 
+    /**
+     * Category for grouping (e.g., "Work", "Creative", "Philosophical").
+     */
+    var `category`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwGround: FfiConverterRustBuffer<SpwGround> {
+    override fun read(buf: ByteBuffer): SpwGround {
+        return SpwGround(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeSpwGroundContentType.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpwGround) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterTypeSpwGroundContentType.allocationSize(value.`contentType`) +
+            FfiConverterString.allocationSize(value.`content`) +
+            FfiConverterString.allocationSize(value.`description`) +
+            FfiConverterString.allocationSize(value.`category`)
+    )
+
+    override fun write(value: SpwGround, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterTypeSpwGroundContentType.write(value.`contentType`, buf)
+            FfiConverterString.write(value.`content`, buf)
+            FfiConverterString.write(value.`description`, buf)
+            FfiConverterString.write(value.`category`, buf)
+    }
+}
+
+
+
+/**
+ * Result of a ground operation.
+ */
+data class SpwGroundResult (
+    /**
+     * Whether the operation succeeded.
+     */
+    var `success`: kotlin.Boolean, 
+    /**
+     * Error message (if failed).
+     */
+    var `error`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwGroundResult: FfiConverterRustBuffer<SpwGroundResult> {
+    override fun read(buf: ByteBuffer): SpwGroundResult {
+        return SpwGroundResult(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpwGroundResult) = (
+            FfiConverterBoolean.allocationSize(value.`success`) +
+            FfiConverterOptionalString.allocationSize(value.`error`)
+    )
+
+    override fun write(value: SpwGroundResult, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`success`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
+    }
+}
+
+
+
+/**
  * Configuration for the inference engine.
  */
 data class SpwInferenceConfig (
@@ -2060,7 +2929,19 @@ data class SpwInferenceConfig (
     /**
      * Temperature for sampling (0.0 = deterministic).
      */
-    var `temperature`: kotlin.Float
+    var `temperature`: kotlin.Float, 
+    /**
+     * Top-p (nucleus) sampling threshold.
+     */
+    var `topP`: kotlin.Float, 
+    /**
+     * Top-k sampling (0 = disabled).
+     */
+    var `topK`: kotlin.UInt, 
+    /**
+     * Repetition penalty (1.0 = no penalty).
+     */
+    var `repeatPenalty`: kotlin.Float
 ) {
     
     companion object
@@ -2079,6 +2960,9 @@ public object FfiConverterTypeSpwInferenceConfig: FfiConverterRustBuffer<SpwInfe
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
         )
     }
 
@@ -2089,7 +2973,10 @@ public object FfiConverterTypeSpwInferenceConfig: FfiConverterRustBuffer<SpwInfe
             FfiConverterBoolean.allocationSize(value.`useGpu`) +
             FfiConverterUInt.allocationSize(value.`nGpuLayers`) +
             FfiConverterUInt.allocationSize(value.`maxTokens`) +
-            FfiConverterFloat.allocationSize(value.`temperature`)
+            FfiConverterFloat.allocationSize(value.`temperature`) +
+            FfiConverterFloat.allocationSize(value.`topP`) +
+            FfiConverterUInt.allocationSize(value.`topK`) +
+            FfiConverterFloat.allocationSize(value.`repeatPenalty`)
     )
 
     override fun write(value: SpwInferenceConfig, buf: ByteBuffer) {
@@ -2100,6 +2987,9 @@ public object FfiConverterTypeSpwInferenceConfig: FfiConverterRustBuffer<SpwInfe
             FfiConverterUInt.write(value.`nGpuLayers`, buf)
             FfiConverterUInt.write(value.`maxTokens`, buf)
             FfiConverterFloat.write(value.`temperature`, buf)
+            FfiConverterFloat.write(value.`topP`, buf)
+            FfiConverterUInt.write(value.`topK`, buf)
+            FfiConverterFloat.write(value.`repeatPenalty`, buf)
     }
 }
 
@@ -2148,6 +3038,75 @@ public object FfiConverterTypeSpwInferenceResult: FfiConverterRustBuffer<SpwInfe
             FfiConverterBoolean.write(value.`success`, buf)
             FfiConverterOptionalString.write(value.`text`, buf)
             FfiConverterOptionalString.write(value.`error`, buf)
+    }
+}
+
+
+
+/**
+ * Information about an available LLM model.
+ */
+data class SpwModelInfo (
+    /**
+     * Unique identifier for the model.
+     */
+    var `id`: kotlin.String, 
+    /**
+     * Human-readable display name.
+     */
+    var `name`: kotlin.String, 
+    /**
+     * Filename for storage (e.g., "model.gguf").
+     */
+    var `filename`: kotlin.String, 
+    /**
+     * Full download URL (HuggingFace CDN).
+     */
+    var `url`: kotlin.String, 
+    /**
+     * Expected file size in bytes.
+     */
+    var `sizeBytes`: kotlin.ULong, 
+    /**
+     * Short description of the model.
+     */
+    var `description`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwModelInfo: FfiConverterRustBuffer<SpwModelInfo> {
+    override fun read(buf: ByteBuffer): SpwModelInfo {
+        return SpwModelInfo(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpwModelInfo) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`filename`) +
+            FfiConverterString.allocationSize(value.`url`) +
+            FfiConverterULong.allocationSize(value.`sizeBytes`) +
+            FfiConverterString.allocationSize(value.`description`)
+    )
+
+    override fun write(value: SpwModelInfo, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`filename`, buf)
+            FfiConverterString.write(value.`url`, buf)
+            FfiConverterULong.write(value.`sizeBytes`, buf)
+            FfiConverterString.write(value.`description`, buf)
     }
 }
 
@@ -2205,6 +3164,176 @@ public object FfiConverterTypeSpwParseResult: FfiConverterRustBuffer<SpwParseRes
             FfiConverterUInt.write(value.`nodeCount`, buf)
     }
 }
+
+
+
+/**
+ * Information about a SPW symbol for UI display.
+ */
+data class SpwSymbolInfo (
+    /**
+     * The character representation (e.g., "~").
+     */
+    var `charRepr`: kotlin.String, 
+    /**
+     * The semantic name (e.g., "potential").
+     */
+    var `name`: kotlin.String, 
+    /**
+     * The deeper meaning/lore (e.g., "latent possibility, becoming").
+     */
+    var `lore`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwSymbolInfo: FfiConverterRustBuffer<SpwSymbolInfo> {
+    override fun read(buf: ByteBuffer): SpwSymbolInfo {
+        return SpwSymbolInfo(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SpwSymbolInfo) = (
+            FfiConverterString.allocationSize(value.`charRepr`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`lore`)
+    )
+
+    override fun write(value: SpwSymbolInfo, buf: ByteBuffer) {
+            FfiConverterString.write(value.`charRepr`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`lore`, buf)
+    }
+}
+
+
+
+
+
+/**
+ * Error type for FFI operations.
+ */
+sealed class SpwException: kotlin.Exception() {
+    
+    class Store(
+        
+        val `reason`: kotlin.String
+        ) : SpwException() {
+        override val message
+            get() = "reason=${ `reason` }"
+    }
+    
+    class InvalidGround(
+        
+        val `reason`: kotlin.String
+        ) : SpwException() {
+        override val message
+            get() = "reason=${ `reason` }"
+    }
+    
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<SpwException> {
+        override fun lift(error_buf: RustBuffer.ByValue): SpwException = FfiConverterTypeSpwError.lift(error_buf)
+    }
+
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwError : FfiConverterRustBuffer<SpwException> {
+    override fun read(buf: ByteBuffer): SpwException {
+        
+
+        return when(buf.getInt()) {
+            1 -> SpwException.Store(
+                FfiConverterString.read(buf),
+                )
+            2 -> SpwException.InvalidGround(
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: SpwException): ULong {
+        return when(value) {
+            is SpwException.Store -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`reason`)
+            )
+            is SpwException.InvalidGround -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`reason`)
+            )
+        }
+    }
+
+    override fun write(value: SpwException, buf: ByteBuffer) {
+        when(value) {
+            is SpwException.Store -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`reason`, buf)
+                Unit
+            }
+            is SpwException.InvalidGround -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`reason`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+/**
+ * Content type for a ground.
+ */
+
+enum class SpwGroundContentType {
+    
+    /**
+     * Natural language description.
+     */
+    NATURAL,
+    /**
+     * SPW expression.
+     */
+    SPW;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSpwGroundContentType: FfiConverterRustBuffer<SpwGroundContentType> {
+    override fun read(buf: ByteBuffer) = try {
+        SpwGroundContentType.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: SpwGroundContentType) = 4UL
+
+    override fun write(value: SpwGroundContentType, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -2280,6 +3409,275 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeSpwGround: FfiConverterRustBuffer<SpwGround?> {
+    override fun read(buf: ByteBuffer): SpwGround? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSpwGround.read(buf)
+    }
+
+    override fun allocationSize(value: SpwGround?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSpwGround.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SpwGround?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSpwGround.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeSpwModelInfo: FfiConverterRustBuffer<SpwModelInfo?> {
+    override fun read(buf: ByteBuffer): SpwModelInfo? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSpwModelInfo.read(buf)
+    }
+
+    override fun allocationSize(value: SpwModelInfo?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSpwModelInfo.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SpwModelInfo?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSpwModelInfo.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSpwBracketInfo: FfiConverterRustBuffer<List<SpwBracketInfo>> {
+    override fun read(buf: ByteBuffer): List<SpwBracketInfo> {
+        val len = buf.getInt()
+        return List<SpwBracketInfo>(len) {
+            FfiConverterTypeSpwBracketInfo.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SpwBracketInfo>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSpwBracketInfo.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SpwBracketInfo>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSpwBracketInfo.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSpwGround: FfiConverterRustBuffer<List<SpwGround>> {
+    override fun read(buf: ByteBuffer): List<SpwGround> {
+        val len = buf.getInt()
+        return List<SpwGround>(len) {
+            FfiConverterTypeSpwGround.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SpwGround>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSpwGround.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SpwGround>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSpwGround.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSpwModelInfo: FfiConverterRustBuffer<List<SpwModelInfo>> {
+    override fun read(buf: ByteBuffer): List<SpwModelInfo> {
+        val len = buf.getInt()
+        return List<SpwModelInfo>(len) {
+            FfiConverterTypeSpwModelInfo.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SpwModelInfo>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSpwModelInfo.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SpwModelInfo>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSpwModelInfo.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSpwSymbolInfo: FfiConverterRustBuffer<List<SpwSymbolInfo>> {
+    override fun read(buf: ByteBuffer): List<SpwSymbolInfo> {
+        val len = buf.getInt()
+        return List<SpwSymbolInfo>(len) {
+            FfiConverterTypeSpwSymbolInfo.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SpwSymbolInfo>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSpwSymbolInfo.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SpwSymbolInfo>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSpwSymbolInfo.write(it, buf)
+        }
+    }
+}
+        /**
+         * Returns the list of available models for download.
+         *
+         * These are small, quantized GGUF models suitable for mobile inference.
+         * All models are from ungated HuggingFace repos.
+         */ fun `availableModels`(): List<SpwModelInfo> {
+            return FfiConverterSequenceTypeSpwModelInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_available_models(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Returns the default model ID for initial setup.
+         */ fun `defaultModelId`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_default_model_id(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Returns information about all SPW bracket types.
+         */ fun `getBrackets`(): List<SpwBracketInfo> {
+            return FfiConverterSequenceTypeSpwBracketInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_get_brackets(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Returns model info by ID, or None if not found.
+         */ fun `getModelById`(`id`: kotlin.String): SpwModelInfo? {
+            return FfiConverterOptionalTypeSpwModelInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_get_model_by_id(
+        FfiConverterString.lower(`id`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Returns information about all SPW symbols.
+         *
+         * Use this to build symbol keyboards or help screens.
+         */ fun `getSymbols`(): List<SpwSymbolInfo> {
+            return FfiConverterSequenceTypeSpwSymbolInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_get_symbols(
+        _status)
+}
+    )
+    }
+    
+
         /**
          * Interprets SPW symbols into human-readable text.
          * This is a simple placeholder until LLM inference is available.
@@ -2306,6 +3704,20 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
     
 
         /**
+         * Returns the preset ground contexts available out of the box.
+         *
+         * These provide common contextual foundations for SPW interpretation.
+         */ fun `presetGrounds`(): List<SpwGround> {
+            return FfiConverterSequenceTypeSpwGround.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_preset_grounds(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Validates a SPW expression string.
          * Returns true if the expression is syntactically valid.
          */ fun `validateSpw`(`input`: kotlin.String): kotlin.Boolean {
@@ -2313,6 +3725,19 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_validate_spw(
         FfiConverterString.lower(`input`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Validates an SPW expression for use as ground content.
+         * Returns an error message if invalid, or None if valid.
+         */ fun `validateSpwGround`(`spw`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_func_validate_spw_ground(
+        FfiConverterString.lower(`spw`),_status)
 }
     )
     }

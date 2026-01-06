@@ -2,7 +2,10 @@ package com.github.spwplace.spweeboard.keyboard
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +29,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.spwplace.spweeboard.FeatureFlags
+
+/**
+ * SPW symbols loaded from Rust core.
+ * Split into two rows for the keyboard layout.
+ */
+private val spwSymbols: List<List<uniffi.spweeboard_core.SpwSymbolInfo>> by lazy {
+    val all = uniffi.spweeboard_core.getSymbols()
+    // Split into two rows: first 5, then remaining 4
+    listOf(all.take(5), all.drop(5))
+}
+
+/**
+ * SPW brackets loaded from Rust core.
+ */
+private val spwBrackets: List<uniffi.spweeboard_core.SpwBracketInfo> by lazy {
+    uniffi.spweeboard_core.getBrackets()
+}
 
 /**
  * Main keyboard layout composable.
@@ -36,64 +57,101 @@ fun KeyboardLayout(
     viewModel: KeyboardViewModel,
     onCommit: (String) -> Unit,
     onDelete: () -> Unit,
-    onOpenSettings: (() -> Unit)? = null
+    onOpenSettings: (() -> Unit)? = null,
+    hapticEnabled: Boolean = true
 ) {
     val buffer by viewModel.buffer
     val parseState by viewModel.parseState
     val interpretation by viewModel.interpretation
     val interpretError by viewModel.interpretError
-    val isInterpreting by viewModel.isInterpreting
+    val loadingState by viewModel.loadingState
     val selectedGround by viewModel.selectedGround
+    val isHistoryVisible by viewModel.isHistoryVisible
 
     // Can only send if we have a valid interpretation (no errors, not loading)
-    val canSend = parseState == ParseState.Valid && buffer.isNotEmpty() && interpretation != null && !isInterpreting
+    val canSend = parseState == ParseState.Valid && buffer.isNotEmpty() && interpretation != null && !loadingState.isLoading
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 4.dp, vertical = 6.dp)
-    ) {
-        // Buffer display with parse status and error
-        BufferDisplay(
-            buffer = buffer,
-            parseState = parseState,
-            interpretation = interpretation,
-            error = interpretError,
-            isLoading = isInterpreting,
-            onClear = { viewModel.clear() },
-            onErrorTap = onOpenSettings
-        )
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(horizontal = 4.dp, vertical = 6.dp)
+        ) {
+            // Buffer display with parse status and error
+            BufferDisplay(
+                buffer = buffer,
+                parseState = parseState,
+                interpretation = interpretation,
+                error = interpretError,
+                loadingState = loadingState,
+                onClear = { viewModel.clear() },
+                onCancel = { viewModel.cancelInterpretation() },
+                onErrorTap = onOpenSettings
+            )
 
-        Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-        // Ground selector row
-        GroundSelectorRow(
-            selectedGround = selectedGround,
-            onGroundSelected = { viewModel.selectGround(it) }
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // SPW symbol rows (2 rows)
-        SpwSymbolRows(
-            onSymbolTap = { viewModel.pushSymbol(it) }
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // QWERTY keyboard (always visible)
-        QwertyLayout(
-            onKeyTap = { viewModel.pushChar(it) },
-            onBackspace = { viewModel.pop() },
-            onSpace = { viewModel.pushChar(" ") },
-            onSend = {
-                if (canSend && interpretation != null) {
-                    onCommit(interpretation!!)
+            // Ground selector row with optional history button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // History button (if enabled and has history)
+                if (FeatureFlags.historyEnabled) {
+                    HistoryButton(
+                        historyCount = viewModel.history.size,
+                        onClick = { viewModel.toggleHistory() }
+                    )
                 }
-            },
-            canSend = canSend
-        )
+
+                // Ground selector takes remaining space
+                Box(modifier = Modifier.weight(1f)) {
+                    GroundSelectorRow(
+                        availableGrounds = viewModel.availableGrounds,
+                        selectedGround = selectedGround,
+                        onGroundSelected = { viewModel.selectGround(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // SPW symbol rows (2 rows)
+            SpwSymbolRows(
+                onSymbolTap = { viewModel.pushSymbol(it) },
+                hapticEnabled = hapticEnabled
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // QWERTY keyboard (always visible)
+            QwertyLayout(
+                onKeyTap = { viewModel.pushChar(it) },
+                onBackspace = { viewModel.pop() },
+                onSpace = { viewModel.pushChar(" ") },
+                onSend = {
+                    if (canSend && interpretation != null) {
+                        onCommit(interpretation!!)
+                    }
+                },
+                canSend = canSend,
+                hapticEnabled = hapticEnabled
+            )
+        }
+
+        // History sheet overlay
+        if (FeatureFlags.historyEnabled) {
+            HistorySheet(
+                isVisible = isHistoryVisible,
+                history = viewModel.history,
+                onRecall = { viewModel.recall(it) },
+                onDismiss = { viewModel.hideHistory() },
+                onClearHistory = { viewModel.clearHistory() },
+                modifier = Modifier.matchParentSize()
+            )
+        }
     }
 }
 
@@ -107,21 +165,51 @@ enum class ParseState {
 }
 
 /**
+ * Loading state for interpretation process.
+ * Provides more granular feedback than a simple boolean.
+ */
+sealed class LoadingState {
+    /** No loading in progress */
+    data object Idle : LoadingState()
+
+    /** Checking model availability */
+    data object CheckingModel : LoadingState()
+
+    /** Interpretation is running */
+    data object Interpreting : LoadingState()
+
+    /** Streaming tokens (future use) */
+    data class Streaming(val tokensReceived: Int, val partialText: String) : LoadingState()
+
+    val isLoading: Boolean get() = this !is Idle
+}
+
+/**
  * Available grounds for interpretation context.
  */
 data class GroundOption(
     val id: String,
     val name: String,
     val spw: String
-)
+) {
+    companion object {
+        fun fromRust(rust: uniffi.spweeboard_core.SpwGround): GroundOption {
+            return GroundOption(
+                id = rust.id,
+                name = rust.name,
+                spw = rust.content
+            )
+        }
+    }
+}
 
-val defaultGrounds = listOf(
-    GroundOption("none", "None", ""),
-    GroundOption("software", "Software", ".{software}"),
-    GroundOption("craft", "Craft", "@[craft].{utility}"),
-    GroundOption("poetry", "Poetry", "@[poetry]~"),
-    GroundOption("inquiry", "Inquiry", "?{&@.}"),
-)
+/**
+ * Default grounds - loaded from Rust core with "None" option prepended.
+ */
+val defaultGrounds: List<GroundOption> by lazy {
+    listOf(GroundOption("none", "None", "")) +
+        uniffi.spweeboard_core.presetGrounds().map { GroundOption.fromRust(it) }
+}
 
 @Composable
 private fun BufferDisplay(
@@ -129,16 +217,32 @@ private fun BufferDisplay(
     parseState: ParseState,
     interpretation: String?,
     error: String?,
-    isLoading: Boolean = false,
+    loadingState: LoadingState = LoadingState.Idle,
     onClear: () -> Unit,
+    onCancel: () -> Unit = {},
     onErrorTap: (() -> Unit)? = null
 ) {
+    val isLoading = loadingState.isLoading
+
     // Show error state if there's an error
     val hasError = error != null && parseState == ParseState.Valid && !isLoading
+
+    // Shimmer animation for loading state
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val shimmerAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "shimmerAlpha"
+    )
 
     // Animate border color based on parse state and error
     val borderColor by animateColorAsState(
         targetValue = when {
+            isLoading -> MaterialTheme.colorScheme.primary.copy(alpha = shimmerAlpha)
             hasError -> MaterialTheme.colorScheme.error
             parseState == ParseState.Empty -> MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
             parseState == ParseState.Valid -> MaterialTheme.colorScheme.primary
@@ -150,6 +254,7 @@ private fun BufferDisplay(
 
     val backgroundColor by animateColorAsState(
         targetValue = when {
+            isLoading -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
             hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
             parseState == ParseState.Empty -> MaterialTheme.colorScheme.surfaceContainerHigh
             parseState == ParseState.Valid -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -193,14 +298,14 @@ private fun BufferDisplay(
             )
 
             if (buffer.isNotEmpty()) {
-                // Parse status indicator
+                // Parse status indicator with pulsing effect when loading
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
                         .background(
                             when {
-                                isLoading -> Color(0xFF2196F3) // Blue: loading
+                                isLoading -> MaterialTheme.colorScheme.primary.copy(alpha = shimmerAlpha)
                                 hasError -> MaterialTheme.colorScheme.error
                                 parseState == ParseState.Valid && interpretation != null -> Color(0xFF4CAF50)
                                 parseState == ParseState.Valid -> Color(0xFFFFA000) // Orange: valid but no interpretation
@@ -222,14 +327,67 @@ private fun BufferDisplay(
             }
         }
 
-        // Show loading indicator
+        // Show loading indicator with state-specific message
         if (isLoading) {
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "⏳ Interpreting...",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            val loadingText = when (loadingState) {
+                is LoadingState.CheckingModel -> "Checking model..."
+                is LoadingState.Interpreting -> "Interpreting..."
+                is LoadingState.Streaming -> {
+                    val tokens = loadingState.tokensReceived
+                    "Generating ($tokens tokens)..."
+                }
+                else -> "Loading..."
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Pulsing dot indicator
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = shimmerAlpha))
+                    )
+                    Text(
+                        text = loadingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    )
+                }
+                // Cancel button (if enabled)
+                if (FeatureFlags.cancelInterpretationEnabled) {
+                    Surface(
+                        onClick = onCancel,
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+            // Show partial streaming text if available
+            if (loadingState is LoadingState.Streaming && loadingState.partialText.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "→ ${loadingState.partialText}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         // Show error message (tappable to open settings)
         else if (hasError && error != null) {
@@ -277,6 +435,7 @@ private fun BufferDisplay(
 
 @Composable
 private fun GroundSelectorRow(
+    availableGrounds: List<GroundOption>,
     selectedGround: GroundOption,
     onGroundSelected: (GroundOption) -> Unit
 ) {
@@ -286,7 +445,7 @@ private fun GroundSelectorRow(
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        defaultGrounds.forEach { ground ->
+        availableGrounds.forEach { ground ->
             val isSelected = ground.id == selectedGround.id
             Surface(
                 modifier = Modifier
@@ -320,48 +479,41 @@ private fun GroundSelectorRow(
 }
 
 @Composable
-private fun SpwSymbolRows(onSymbolTap: (String) -> Unit) {
-    val symbols = listOf(
-        listOf("~" to "potential", "#" to "vibration", "." to "ground", "?" to "wonder", "!" to "action"),
-        listOf("*" to "value", "&" to "subject", "@" to "perspective", "^" to "integration")
-    )
-
-    val brackets = listOf(
-        "<" to ">",
-        "(" to ")",
-        "[" to "]",
-        "{" to "}"
-    )
-
+private fun SpwSymbolRows(
+    onSymbolTap: (String) -> Unit,
+    hapticEnabled: Boolean = true
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // Symbol rows
-        symbols.forEach { row ->
+        // Symbol rows (loaded from Rust)
+        spwSymbols.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                row.forEach { (symbol, _) ->
+                row.forEach { symbolInfo ->
                     SymbolKey(
-                        symbol = symbol,
+                        symbol = symbolInfo.charRepr,
                         modifier = Modifier.weight(1f),
-                        onClick = { onSymbolTap(symbol) }
+                        onClick = { onSymbolTap(symbolInfo.charRepr) },
+                        hapticEnabled = hapticEnabled
                     )
                 }
             }
         }
 
-        // Bracket row
+        // Bracket row (loaded from Rust)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            brackets.forEach { (open, close) ->
+            spwBrackets.forEach { bracketInfo ->
                 BracketKey(
-                    open = open,
-                    close = close,
+                    open = bracketInfo.open,
+                    close = bracketInfo.close,
                     modifier = Modifier.weight(1f),
-                    onOpenTap = { onSymbolTap(open) },
-                    onCloseTap = { onSymbolTap(close) }
+                    onOpenTap = { onSymbolTap(bracketInfo.open) },
+                    onCloseTap = { onSymbolTap(bracketInfo.close) },
+                    hapticEnabled = hapticEnabled
                 )
             }
         }
@@ -372,13 +524,16 @@ private fun SpwSymbolRows(onSymbolTap: (String) -> Unit) {
 private fun SymbolKey(
     symbol: String,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    hapticEnabled: Boolean = true
 ) {
     val view = LocalView.current
 
     Surface(
         onClick = {
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            if (hapticEnabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
             onClick()
         },
         modifier = modifier.height(48.dp),
@@ -402,7 +557,8 @@ private fun BracketKey(
     close: String,
     modifier: Modifier = Modifier,
     onOpenTap: () -> Unit,
-    onCloseTap: () -> Unit
+    onCloseTap: () -> Unit,
+    hapticEnabled: Boolean = true
 ) {
     val view = LocalView.current
 
@@ -413,7 +569,9 @@ private fun BracketKey(
     ) {
         Surface(
             onClick = {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                if (hapticEnabled) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
                 onOpenTap()
             },
             modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -431,7 +589,9 @@ private fun BracketKey(
         }
         Surface(
             onClick = {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                if (hapticEnabled) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
                 onCloseTap()
             },
             modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -457,7 +617,8 @@ private fun QwertyLayout(
     onBackspace: () -> Unit,
     onSpace: () -> Unit,
     onSend: () -> Unit,
-    canSend: Boolean
+    canSend: Boolean,
+    hapticEnabled: Boolean = true
 ) {
     val view = LocalView.current
     val rows = listOf(
@@ -479,7 +640,9 @@ private fun QwertyLayout(
                 row.forEach { char ->
                     Surface(
                         onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            if (hapticEnabled) {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            }
                             onKeyTap(char.toString())
                         },
                         modifier = Modifier
@@ -512,7 +675,9 @@ private fun QwertyLayout(
             // Backspace
             Surface(
                 onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (hapticEnabled) {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
                     onBackspace()
                 },
                 modifier = Modifier
@@ -530,7 +695,9 @@ private fun QwertyLayout(
             // Space bar
             Surface(
                 onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (hapticEnabled) {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
                     onSpace()
                 },
                 modifier = Modifier
@@ -559,7 +726,9 @@ private fun QwertyLayout(
             Surface(
                 onClick = {
                     if (canSend) {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        if (hapticEnabled) {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        }
                         onSend()
                     }
                 },

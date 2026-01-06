@@ -16,6 +16,7 @@ pub mod ground;
 pub mod compiler;
 pub mod inference;
 pub mod buffer;
+pub mod model;
 
 #[cfg(any(feature = "ipc-server", feature = "ipc-client"))]
 pub mod ipc;
@@ -28,6 +29,7 @@ pub use ffi::{
     SpwBuffer, SpwParseResult, SpwParseState,
     SpwInferenceConfig, SpwInferenceResult, SpwEngineStatus, SpwInferenceEngine,
 };
+pub use model::{SpwModelInfo, available_models, default_model_id, get_model_by_id};
 
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();

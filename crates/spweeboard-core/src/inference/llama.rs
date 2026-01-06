@@ -14,6 +14,7 @@ use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaModel, Special};
 use llama_cpp_2::sampling::LlamaSampler;
 use regex::Regex;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -44,6 +45,10 @@ pub enum LlamaError {
     /// Model is currently busy with another request.
     #[error("Model is busy, please try again")]
     ModelBusy,
+
+    /// Generation was cancelled by the user.
+    #[error("Generation cancelled")]
+    Cancelled,
 }
 
 /// Progress updates during model loading.
@@ -122,6 +127,8 @@ pub struct LlamaEngine {
     model_id: Arc<Mutex<String>>,
     quantization: Arc<Mutex<String>>,
     config: InferenceConfig,
+    /// Cancellation token - set to true to abort generation.
+    cancel_token: Arc<AtomicBool>,
 }
 
 impl LlamaEngine {
@@ -183,6 +190,7 @@ impl LlamaEngine {
             model_id: Arc::new(Mutex::new(model_id_owned)),
             quantization: Arc::new(Mutex::new(quantization_owned)),
             config,
+            cancel_token: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -228,6 +236,26 @@ impl LlamaEngine {
             "Vocab: {}, Params: {}, Max tokens: {}, Temperature: {}",
             vocab, params, self.params.max_tokens, self.params.temperature
         )
+    }
+
+    /// Cancels any in-progress generation.
+    ///
+    /// The next token generation iteration will check this flag and return early.
+    /// The flag is automatically reset when a new generation starts.
+    pub fn cancel(&self) {
+        self.cancel_token.store(true, Ordering::SeqCst);
+        info!("Generation cancellation requested");
+    }
+
+    /// Returns whether cancellation has been requested.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.load(Ordering::SeqCst)
+    }
+
+    /// Resets the cancellation token (called at start of generation).
+    fn reset_cancel(&self) {
+        self.cancel_token.store(false, Ordering::SeqCst);
     }
 
     /// Switches to a new model with progress reporting.
@@ -345,11 +373,18 @@ impl LlamaEngine {
         debug!(prompt_len = prompt.len(), "Starting LLM generation");
         trace!(prompt = %prompt, "Full prompt");
 
+        // Reset cancellation token at start of generation
+        self.reset_cancel();
+
         let prompt = prompt.to_string();
         let max_tokens = self.params.max_tokens;
         let temperature = self.params.temperature;
+        let top_p = self.params.top_p;
+        let top_k = self.params.top_k;
+        let repeat_penalty = self.params.repeat_penalty;
         let n_ctx = self.config.n_ctx;
         let inner = self.inner.clone();
+        let cancel_token = self.cancel_token.clone();
 
         // Run blocking generation in a separate thread
         let output = tokio::task::spawn_blocking(move || {
@@ -405,22 +440,57 @@ impl LlamaEngine {
             ctx.decode(&mut batch)
                 .map_err(|e| LlamaError::Inference(format!("Prompt decode failed: {e}")))?;
 
-            // Set up sampler with temperature
+            // Set up sampler chain with all parameters
             let mut sampler = if temperature <= 0.0 {
                 LlamaSampler::greedy()
             } else {
-                LlamaSampler::chain_simple([
-                    LlamaSampler::temp(temperature),
-                    LlamaSampler::dist(rand::random()),
-                ])
+                // Build sampler chain: penalties -> top_k -> top_p -> temp -> dist
+                let mut samplers: Vec<LlamaSampler> = Vec::new();
+
+                // Repetition penalty (applied first)
+                if repeat_penalty > 1.0 {
+                    // Last 64 tokens, no newline penalty
+                    samplers.push(LlamaSampler::penalties(
+                        64,              // last_n tokens to consider
+                        repeat_penalty,  // repeat penalty
+                        0.0,             // frequency penalty
+                        0.0,             // presence penalty
+                    ));
+                }
+
+                // Top-K sampling
+                if top_k > 0 {
+                    samplers.push(LlamaSampler::top_k(top_k as i32));
+                }
+
+                // Top-P (nucleus) sampling
+                if top_p < 1.0 {
+                    samplers.push(LlamaSampler::top_p(top_p, 1));
+                }
+
+                // Temperature
+                samplers.push(LlamaSampler::temp(temperature));
+
+                // Final distribution sampler
+                samplers.push(LlamaSampler::dist(rand::random()));
+
+                LlamaSampler::chain_simple(samplers)
             };
 
             // Generate tokens
             let mut output = String::new();
             let mut kv_pos = tokens.len() as i32;
             let mut logits_idx = (tokens.len() - 1) as i32;
+            let mut was_cancelled = false;
 
             for _ in 0..max_tokens {
+                // Check for cancellation
+                if cancel_token.load(Ordering::SeqCst) {
+                    info!("Generation cancelled by user");
+                    was_cancelled = true;
+                    break;
+                }
+
                 let new_token = sampler.sample(&ctx, logits_idx);
                 sampler.accept(new_token);
 
@@ -445,6 +515,11 @@ impl LlamaEngine {
 
                 kv_pos += 1;
                 logits_idx = 0;
+            }
+
+            // Return error if cancelled (even if we got partial output)
+            if was_cancelled {
+                return Err(LlamaError::Cancelled);
             }
 
             let elapsed = start.elapsed();

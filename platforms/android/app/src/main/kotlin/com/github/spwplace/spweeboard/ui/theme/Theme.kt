@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.github.spwplace.spweeboard.settings.ThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = androidx.compose.ui.graphics.Color(0xFFBBC3FF),
@@ -48,12 +49,26 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF46464F),
 )
 
+/**
+ * Main theme composable for Spweeboard.
+ *
+ * @param themeMode The theme mode to use (System, Light, or Dark)
+ * @param dynamicColor Whether to use Material You dynamic colors (Android 12+)
+ */
 @Composable
 fun SpweeboardTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.System,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val systemDarkTheme = isSystemInDarkTheme()
+
+    val darkTheme = when (themeMode) {
+        ThemeMode.System -> systemDarkTheme
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
@@ -66,6 +81,22 @@ fun SpweeboardTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography(),
+        content = content
+    )
+}
+
+/**
+ * Overload for backward compatibility with darkTheme boolean.
+ */
+@Composable
+fun SpweeboardTheme(
+    darkTheme: Boolean,
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    SpweeboardTheme(
+        themeMode = if (darkTheme) ThemeMode.Dark else ThemeMode.Light,
+        dynamicColor = dynamicColor,
         content = content
     )
 }

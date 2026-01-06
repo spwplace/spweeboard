@@ -39,6 +39,12 @@ android {
         ndk {
             abiFilters += targetAbis
         }
+
+        // Feature flags (can be overridden per build type)
+        buildConfigField("boolean", "FEATURE_STREAMING", "true")
+        buildConfigField("boolean", "FEATURE_HISTORY", "true")
+        buildConfigField("boolean", "FEATURE_CUSTOM_GROUNDS", "false")
+        buildConfigField("boolean", "FEATURE_CANCEL", "true")
     }
 
     buildTypes {
@@ -63,6 +69,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Point to jniLibs where we'll put the .so files
@@ -147,9 +154,9 @@ tasks.register<Exec>("generateUniffiBindings") {
         "--features", "uniffi",
         "--bin", "uniffi-bindgen",
         "generate",
-        "--library", rustTargetDir.resolve("aarch64-linux-android/release/libspweeboard_core.so").absolutePath,
+        "--library", jniLibsDir.resolve("arm64-v8a/libspweeboard_core.so").absolutePath,
         "--language", "kotlin",
-        "--out-dir", uniffiBindingsDir.absolutePath
+        "--out-dir", uniffiBindingsDir.parentFile.absolutePath
     )
 
     doFirst {
@@ -186,6 +193,9 @@ dependencies {
 
     // HTTP client for model downloads
     implementation(libs.okhttp)
+
+    // WorkManager for background downloads
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

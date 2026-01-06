@@ -23,16 +23,28 @@ pub struct Ground {
     pub name: CompactString,
     /// The ground content — can be natural language or SPW.
     pub content: GroundContent,
+    /// Human-readable description of what this ground does.
+    pub description: CompactString,
+    /// Category for grouping (e.g., "Work", "Creative", "Philosophical").
+    pub category: CompactString,
 }
 
 impl Ground {
     /// Creates a new ground with natural language content.
     #[must_use]
-    pub fn natural(id: impl Into<SmolStr>, name: impl Into<CompactString>, text: impl Into<CompactString>) -> Self {
+    pub fn natural(
+        id: impl Into<SmolStr>,
+        name: impl Into<CompactString>,
+        text: impl Into<CompactString>,
+        description: impl Into<CompactString>,
+        category: impl Into<CompactString>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
             content: GroundContent::Natural(text.into()),
+            description: description.into(),
+            category: category.into(),
         }
     }
 
@@ -44,12 +56,16 @@ impl Ground {
         id: impl Into<SmolStr>,
         name: impl Into<CompactString>,
         spw: &str,
+        description: impl Into<CompactString>,
+        category: impl Into<CompactString>,
     ) -> Result<Self, ParseError> {
         let expr = parse(spw)?;
         Ok(Self {
             id: id.into(),
             name: name.into(),
             content: GroundContent::Spw(expr),
+            description: description.into(),
+            category: category.into(),
         })
     }
 
@@ -94,6 +110,8 @@ impl Ground {
             id: SmolStr::new("composed"),
             name: CompactString::new(names.join(" ^ ")),
             content: GroundContent::Spw(composed),
+            description: CompactString::new("Composed ground"),
+            category: CompactString::new("Composed"),
         })
     }
 
@@ -116,26 +134,104 @@ pub enum GroundContent {
     Spw(Expression),
 }
 
+/// Returns the preset ground contexts available out of the box.
+///
+/// These provide common contextual foundations for SPW interpretation.
+pub fn preset_grounds() -> Vec<Ground> {
+    vec![
+        Ground::spw(
+            "software",
+            "Software Development",
+            ".{software}",
+            "Grounded toward software creation",
+            "Work",
+        ).expect("valid spw"),
+        Ground::spw(
+            "craft",
+            "Craftsperson",
+            "@[craft].{utility}",
+            "Perspective in craft mode, grounded in usefulness",
+            "Work",
+        ).expect("valid spw"),
+        Ground::spw(
+            "poetry",
+            "Poetic Voice",
+            "@[poetry]~",
+            "Poetry's becoming perspective",
+            "Creative",
+        ).expect("valid spw"),
+        Ground::spw(
+            "inquiry",
+            "Deep Inquiry",
+            "?{&@.}",
+            "Wondering about subject-perspective-ground flow",
+            "Philosophical",
+        ).expect("valid spw"),
+        Ground::spw(
+            "becoming",
+            "Becoming",
+            "&~*^",
+            "Subject becoming through value integration",
+            "Philosophical",
+        ).expect("valid spw"),
+        Ground::spw(
+            "resonance",
+            "Resonance",
+            "#.&",
+            "Vibration grounding the subject",
+            "Creative",
+        ).expect("valid spw"),
+        Ground::spw(
+            "action",
+            "Action-Oriented",
+            "!{*}",
+            "Asserting toward value",
+            "Work",
+        ).expect("valid spw"),
+        Ground::spw(
+            "reflection",
+            "Reflective",
+            "@&.",
+            "Perspective on subject's foundation",
+            "Philosophical",
+        ).expect("valid spw"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn test_preset_grounds() {
+        let grounds = preset_grounds();
+        assert!(!grounds.is_empty());
+        assert!(grounds.iter().any(|g| g.id == "software"));
+        // Verify description and category are set
+        let software = grounds.iter().find(|g| g.id == "software").unwrap();
+        assert!(!software.description.is_empty());
+        assert_eq!(software.category.as_str(), "Work");
+    }
+
+    #[test]
     fn natural_ground() {
-        let ground = Ground::natural("g1", "Software", "software development");
+        let ground = Ground::natural("g1", "Software", "software development", "Test desc", "Test");
         assert_eq!(ground.render(), "software development");
+        assert_eq!(ground.description.as_str(), "Test desc");
+        assert_eq!(ground.category.as_str(), "Test");
     }
 
     #[test]
     fn spw_ground() {
-        let ground = Ground::spw("g2", "Work Mode", "@[work]").unwrap();
+        let ground = Ground::spw("g2", "Work Mode", "@[work]", "Work mode desc", "Work").unwrap();
         assert_eq!(ground.render(), "@[work]");
+        assert_eq!(ground.category.as_str(), "Work");
     }
 
     #[test]
     fn compose_grounds() {
-        let g1 = Ground::spw("g1", "Craft", "@[craft]").unwrap();
-        let g2 = Ground::spw("g2", "Utility", ".{utility}").unwrap();
+        let g1 = Ground::spw("g1", "Craft", "@[craft]", "Craft desc", "Work").unwrap();
+        let g2 = Ground::spw("g2", "Utility", ".{utility}", "Utility desc", "Work").unwrap();
 
         let composed = Ground::compose(&[g1, g2]).unwrap();
         assert_eq!(composed.render(), "@[craft].{utility}");
@@ -144,8 +240,8 @@ mod tests {
 
     #[test]
     fn compose_mixed_grounds() {
-        let g1 = Ground::natural("g1", "Context", "software");
-        let g2 = Ground::spw("g2", "Mode", "@[work]").unwrap();
+        let g1 = Ground::natural("g1", "Context", "software", "Context desc", "Test");
+        let g2 = Ground::spw("g2", "Mode", "@[work]", "Mode desc", "Work").unwrap();
 
         let composed = Ground::compose(&[g1, g2]).unwrap();
         // Natural text gets wrapped in scene brackets

@@ -23,8 +23,16 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.github.spwplace.spweeboard.ui.theme.SpweeboardTheme
+import com.github.spwplace.spweeboard.settings.SettingsRepository
+import com.github.spwplace.spweeboard.settings.ThemeMode
 import com.github.spwplace.spweeboard.model.InferenceManager
 import com.github.spwplace.spweeboard.model.InterpretResult
+import com.github.spwplace.spweeboard.FeatureFlags
+import com.github.spwplace.spweeboard.SpweeboardApplication
+import uniffi.spweeboard_core.SpwGroundStore
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,16 +54,38 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
     private var scope: CoroutineScope? = null
     private var recomposer: Recomposer? = null
 
+    // Settings for persistence
+    private lateinit var settingsRepository: SettingsRepository
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
     override val viewModelStore: ViewModelStore get() = store
 
-    private val viewModel = KeyboardViewModel()
+    private val viewModel by lazy {
+        KeyboardViewModel(
+            onGroundSelected = { groundId ->
+                serviceScope.launch {
+                    settingsRepository.setDefaultGroundId(groundId)
+                }
+            }
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+
+        // Initialize settings repository
+        settingsRepository = SettingsRepository.getInstance(this)
+
+        // Load saved ground selection
+        serviceScope.launch {
+            settingsRepository.settings.collect { settings ->
+                viewModel.initializeGround(settings.defaultGroundId)
+            }
+        }
 
         // Create recomposer with our own scope and start it
         scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
@@ -83,7 +113,12 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
             compositionContext = recomposer
 
             setContent {
-                SpweeboardTheme {
+                // Read settings
+                val settingsRepository = remember { SettingsRepository.getInstance(this@SpweeboardService) }
+                val themeMode by settingsRepository.themeMode.collectAsState(initial = ThemeMode.System)
+                val hapticEnabled by settingsRepository.hapticEnabled.collectAsState(initial = true)
+
+                SpweeboardTheme(themeMode = themeMode) {
                     KeyboardLayout(
                         viewModel = viewModel,
                         onCommit = { text ->
@@ -99,7 +134,8 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             startActivity(intent)
-                        }
+                        },
+                        hapticEnabled = hapticEnabled
                     )
                 }
             }
@@ -121,10 +157,12 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
     }
 
     override fun onDestroy() {
+        viewModel.dispose()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
         recomposer?.cancel()
         scope?.cancel()
+        serviceScope.cancel()
         super.onDestroy()
     }
 }
@@ -133,13 +171,28 @@ class SpweeboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOw
  * View model for keyboard state.
  * Uses Rust FFI for SPW parsing and interpretation.
  */
-class KeyboardViewModel {
+class KeyboardViewModel(
+    private val groundStore: SpwGroundStore? = SpweeboardApplication.getGroundStore(),
+    private val onGroundSelected: ((String) -> Unit)? = null
+) {
     val buffer = mutableStateOf("")
     val parseState = mutableStateOf(ParseState.Empty)
     val interpretation = mutableStateOf<String?>(null)
     val interpretError = mutableStateOf<String?>(null)
-    val isInterpreting = mutableStateOf(false)
+    val loadingState = mutableStateOf<LoadingState>(LoadingState.Idle)
     val selectedGround = mutableStateOf(defaultGrounds.first())
+
+    // Expression history - backed by Rust store for persistence
+    val history: List<String> get() = groundStore?.listHistory(FeatureFlags.MAX_HISTORY_SIZE.toUInt())
+        ?: emptyList()
+    val isHistoryVisible = mutableStateOf(false)
+
+    // Available grounds - preset + custom from shared store
+    val availableGrounds: List<GroundOption>
+        get() {
+            val customGrounds = groundStore?.list()?.map { GroundOption.fromRust(it) } ?: emptyList()
+            return defaultGrounds + customGrounds
+        }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var interpretJob: kotlinx.coroutines.Job? = null
@@ -166,24 +219,80 @@ class KeyboardViewModel {
         parseState.value = ParseState.Empty
         interpretation.value = null
         interpretError.value = null
-        isInterpreting.value = false
+        loadingState.value = LoadingState.Idle
         interpretJob?.cancel()
     }
 
     fun commit() {
+        // Add to history if enabled and buffer is non-empty
+        if (FeatureFlags.historyEnabled && buffer.value.isNotEmpty()) {
+            // Push to Rust store (handles deduplication and trimming)
+            groundStore?.pushHistory(buffer.value)
+        }
+
         buffer.value = ""
         parseState.value = ParseState.Empty
         interpretation.value = null
         interpretError.value = null
-        isInterpreting.value = false
+        loadingState.value = LoadingState.Idle
         interpretJob?.cancel()
+    }
+
+    /**
+     * Recall an expression from history.
+     * @param index Visual index in the history list (UI-dependent ordering)
+     */
+    fun recall(index: Int) {
+        // Rust history is newest-first, so index 0 = newest
+        // The UI shows history newest-first, so indices align
+        val historyList = history
+        if (index in historyList.indices) {
+            buffer.value = historyList[index]
+            updateParseState()
+            isHistoryVisible.value = false
+        }
+    }
+
+    /**
+     * Show/hide the history sheet.
+     */
+    fun toggleHistory() {
+        if (FeatureFlags.historyEnabled) {
+            isHistoryVisible.value = !isHistoryVisible.value
+        }
+    }
+
+    fun hideHistory() {
+        isHistoryVisible.value = false
+    }
+
+    /**
+     * Clear all history entries.
+     */
+    fun clearHistory() {
+        groundStore?.clearHistory()
     }
 
     fun selectGround(ground: GroundOption) {
         selectedGround.value = ground
+        // Persist ground selection
+        onGroundSelected?.invoke(ground.id)
         // Re-interpret with new ground
         if (parseState.value == ParseState.Valid) {
             interpretAsync(buffer.value, ground)
+        }
+    }
+
+    /**
+     * Initialize the selected ground from a persisted ID.
+     * Searches both preset and custom grounds.
+     */
+    fun initializeGround(groundId: String?) {
+        if (groundId != null) {
+            val ground = availableGrounds.find { it.id == groundId }
+            if (ground != null) {
+                selectedGround.value = ground
+            }
         }
     }
 
@@ -194,7 +303,7 @@ class KeyboardViewModel {
             parseState.value = ParseState.Empty
             interpretation.value = null
             interpretError.value = null
-            isInterpreting.value = false
+            loadingState.value = LoadingState.Idle
             return
         }
 
@@ -214,7 +323,7 @@ class KeyboardViewModel {
         } else {
             interpretation.value = null
             interpretError.value = null
-            isInterpreting.value = false
+            loadingState.value = LoadingState.Idle
         }
     }
 
@@ -227,14 +336,15 @@ class KeyboardViewModel {
         interpretJob?.cancel()
 
         // Check if model is loaded first (quick check)
+        loadingState.value = LoadingState.CheckingModel
         if (!InferenceManager.isModelLoaded()) {
             interpretation.value = null
             interpretError.value = "No model loaded"
-            isInterpreting.value = false
+            loadingState.value = LoadingState.Idle
             return
         }
 
-        isInterpreting.value = true
+        loadingState.value = LoadingState.Interpreting
 
         interpretJob = scope.launch {
             val groundName = if (ground.id != "none") ground.name else null
@@ -254,8 +364,26 @@ class KeyboardViewModel {
                     interpretation.value = null
                     interpretError.value = result.message
                 }
+                is InterpretResult.Cancelled -> {
+                    // Silent cancellation - just reset to idle
+                    interpretation.value = null
+                    interpretError.value = null
+                }
             }
-            isInterpreting.value = false
+            loadingState.value = LoadingState.Idle
+        }
+    }
+
+    /**
+     * Cancel any in-progress interpretation.
+     */
+    fun cancelInterpretation() {
+        if (FeatureFlags.cancelInterpretationEnabled && loadingState.value.isLoading) {
+            interpretJob?.cancel()
+            InferenceManager.cancelInterpretation()
+            loadingState.value = LoadingState.Idle
+            interpretation.value = null
+            interpretError.value = null
         }
     }
 

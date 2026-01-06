@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn compile_with_ground() {
         let expr = parse("?*").unwrap();
-        let ground = Ground::spw("g", "Work", "@[work]").unwrap();
+        let ground = Ground::spw("g", "Work", "@[work]", "Work mode", "Work").unwrap();
         let prompt = PromptCompiler::default().compile(&expr, Some(&ground));
 
         assert!(prompt.contains("@[work]"));

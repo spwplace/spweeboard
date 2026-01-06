@@ -4,15 +4,27 @@
 //! - Parse and validate SPW expressions
 //! - Manage expression buffer state
 //! - Run LLM inference for SPW interpretation
+//! - Manage ground contexts (CRUD operations)
 
 #[cfg(feature = "uniffi")]
 use uniffi;
 
 use crate::spw::{parse, Expression, ParseError};
 use crate::compiler::PromptCompiler;
+use crate::ground::{Ground, GroundContent, GroundStore};
 
 #[cfg(feature = "llama")]
 use crate::inference::{InferenceConfig, InferenceEngine, GenerationParams, LlamaEngine, LlamaError};
+
+/// Error type for FFI operations.
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
+pub enum SpwError {
+    #[error("Store error: {reason}")]
+    Store { reason: String },
+    #[error("Invalid ground: {reason}")]
+    InvalidGround { reason: String },
+}
 
 /// Result of parsing a SPW expression.
 #[derive(Debug, Clone)]
@@ -189,6 +201,322 @@ pub fn parse_spw(input: String) -> SpwParseResult {
     }
 }
 
+// =============================================================================
+// Ground Management FFI
+// =============================================================================
+
+/// Content type for a ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum SpwGroundContentType {
+    /// Natural language description.
+    Natural,
+    /// SPW expression.
+    Spw,
+}
+
+/// FFI-friendly ground representation.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpwGround {
+    /// Unique identifier.
+    pub id: String,
+    /// Human-readable name.
+    pub name: String,
+    /// Content type (natural or spw).
+    pub content_type: SpwGroundContentType,
+    /// The ground content (natural language text or SPW expression).
+    pub content: String,
+    /// Human-readable description of what this ground does.
+    pub description: String,
+    /// Category for grouping (e.g., "Work", "Creative", "Philosophical").
+    pub category: String,
+}
+
+impl From<Ground> for SpwGround {
+    fn from(ground: Ground) -> Self {
+        let (content_type, content) = match &ground.content {
+            GroundContent::Natural(text) => (SpwGroundContentType::Natural, text.to_string()),
+            GroundContent::Spw(expr) => (SpwGroundContentType::Spw, expr.render()),
+        };
+        Self {
+            id: ground.id.to_string(),
+            name: ground.name.to_string(),
+            content_type,
+            content,
+            description: ground.description.to_string(),
+            category: ground.category.to_string(),
+        }
+    }
+}
+
+impl SpwGround {
+    /// Converts to the internal Ground type.
+    pub fn to_ground(&self) -> Result<Ground, SpwError> {
+        match self.content_type {
+            SpwGroundContentType::Natural => {
+                Ok(Ground::natural(&self.id, &self.name, &self.content, &self.description, &self.category))
+            }
+            SpwGroundContentType::Spw => {
+                Ground::spw(&self.id, &self.name, &self.content, &self.description, &self.category)
+                    .map_err(|e| SpwError::InvalidGround { reason: format!("Invalid SPW expression: {}", e) })
+            }
+        }
+    }
+}
+
+/// Result of a ground operation.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpwGroundResult {
+    /// Whether the operation succeeded.
+    pub success: bool,
+    /// Error message (if failed).
+    pub error: Option<String>,
+}
+
+/// Persistent storage for ground contexts.
+/// Thread-safe wrapper around SQLite-backed GroundStore.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
+pub struct SpwGroundStore {
+    inner: std::sync::Mutex<GroundStore>,
+}
+
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+impl SpwGroundStore {
+    /// Opens or creates a ground store at the given path.
+    #[cfg_attr(feature = "uniffi", uniffi::constructor)]
+    pub fn open(path: String) -> Result<Self, SpwError> {
+        GroundStore::open(&path)
+            .map(|store| Self {
+                inner: std::sync::Mutex::new(store),
+            })
+            .map_err(|e| SpwError::Store { reason: format!("Failed to open ground store: {}", e) })
+    }
+
+    /// Saves a ground to the store (insert or update).
+    pub fn save(&self, ground: SpwGround) -> SpwGroundResult {
+        let internal_ground = match ground.to_ground() {
+            Ok(g) => g,
+            Err(e) => {
+                return SpwGroundResult {
+                    success: false,
+                    error: Some(e.to_string()),
+                }
+            }
+        };
+
+        match self.inner.lock() {
+            Ok(store) => match store.save(&internal_ground) {
+                Ok(()) => SpwGroundResult {
+                    success: true,
+                    error: None,
+                },
+                Err(e) => SpwGroundResult {
+                    success: false,
+                    error: Some(format!("Database error: {}", e)),
+                },
+            },
+            Err(_) => SpwGroundResult {
+                success: false,
+                error: Some("Failed to acquire lock".to_string()),
+            },
+        }
+    }
+
+    /// Loads a ground by ID.
+    pub fn load(&self, id: String) -> Option<SpwGround> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.load(&id).ok().flatten())
+            .map(SpwGround::from)
+    }
+
+    /// Lists all grounds.
+    pub fn list(&self) -> Vec<SpwGround> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.list().ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(SpwGround::from)
+            .collect()
+    }
+
+    /// Deletes a ground by ID.
+    pub fn delete(&self, id: String) -> bool {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.delete(&id).ok())
+            .unwrap_or(false)
+    }
+
+    /// Returns the number of grounds in the store.
+    pub fn count(&self) -> u32 {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.list().ok())
+            .map(|grounds| grounds.len() as u32)
+            .unwrap_or(0)
+    }
+
+    // =========================================================================
+    // History Methods
+    // =========================================================================
+
+    /// Pushes an expression to history.
+    ///
+    /// Avoids consecutive duplicates.
+    pub fn push_history(&self, expression: String) {
+        if let Ok(store) = self.inner.lock() {
+            let _ = store.push_history(&expression);
+        }
+    }
+
+    /// Lists history entries (newest first).
+    ///
+    /// Pass 0 for limit to get all entries (up to 100).
+    pub fn list_history(&self, limit: u32) -> Vec<String> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.list_history(limit).ok())
+            .unwrap_or_default()
+    }
+
+    /// Recalls a specific history entry by index (0 = newest).
+    pub fn recall_history(&self, index: u32) -> Option<String> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.recall_history(index).ok())
+            .flatten()
+    }
+
+    /// Clears all history entries.
+    pub fn clear_history(&self) {
+        if let Ok(store) = self.inner.lock() {
+            let _ = store.clear_history();
+        }
+    }
+
+    /// Returns the number of history entries.
+    pub fn history_count(&self) -> u32 {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.history_count().ok())
+            .unwrap_or(0)
+    }
+}
+
+/// Validates an SPW expression for use as ground content.
+/// Returns an error message if invalid, or None if valid.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn validate_spw_ground(spw: String) -> Option<String> {
+    if spw.is_empty() {
+        return Some("SPW expression cannot be empty".to_string());
+    }
+    match parse(&spw) {
+        Ok(_) => None,
+        Err(e) => Some(format!("Invalid SPW: {}", e)),
+    }
+}
+
+/// Returns the preset ground contexts available out of the box.
+///
+/// These provide common contextual foundations for SPW interpretation.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn preset_grounds() -> Vec<SpwGround> {
+    crate::ground::preset_grounds()
+        .into_iter()
+        .map(SpwGround::from)
+        .collect()
+}
+
+// =============================================================================
+// Symbol Info
+// =============================================================================
+
+/// Information about a SPW symbol for UI display.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpwSymbolInfo {
+    /// The character representation (e.g., "~").
+    pub char_repr: String,
+    /// The semantic name (e.g., "potential").
+    pub name: String,
+    /// The deeper meaning/lore (e.g., "latent possibility, becoming").
+    pub lore: String,
+}
+
+/// Returns information about all SPW symbols.
+///
+/// Use this to build symbol keyboards or help screens.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn get_symbols() -> Vec<SpwSymbolInfo> {
+    use crate::spw::Symbol;
+
+    Symbol::ALL.iter().map(|s: &Symbol| SpwSymbolInfo {
+        char_repr: s.as_char().to_string(),
+        name: s.name().to_string(),
+        lore: s.lore().to_string(),
+    }).collect()
+}
+
+/// Returns information about SPW bracket types.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpwBracketInfo {
+    /// The opening bracket character.
+    pub open: String,
+    /// The closing bracket character.
+    pub close: String,
+    /// The semantic name (e.g., "concept").
+    pub name: String,
+    /// The deeper meaning.
+    pub lore: String,
+}
+
+/// Returns information about all SPW bracket types.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn get_brackets() -> Vec<SpwBracketInfo> {
+    vec![
+        SpwBracketInfo {
+            open: "<".into(),
+            close: ">".into(),
+            name: "concept".into(),
+            lore: "named concept or abstraction".into(),
+        },
+        SpwBracketInfo {
+            open: "(".into(),
+            close: ")".into(),
+            name: "scene".into(),
+            lore: "concrete scene or context".into(),
+        },
+        SpwBracketInfo {
+            open: "[".into(),
+            close: "]".into(),
+            name: "mode".into(),
+            lore: "operational mode or state".into(),
+        },
+        SpwBracketInfo {
+            open: "{".into(),
+            close: "}".into(),
+            name: "direction".into(),
+            lore: "intention or goal vector".into(),
+        },
+    ]
+}
+
+// =============================================================================
+// Simple Interpretation
+// =============================================================================
+
 /// Interprets SPW symbols into human-readable text.
 /// This is a simple placeholder until LLM inference is available.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -268,6 +596,12 @@ pub struct SpwInferenceConfig {
     pub max_tokens: u32,
     /// Temperature for sampling (0.0 = deterministic).
     pub temperature: f32,
+    /// Top-p (nucleus) sampling threshold.
+    pub top_p: f32,
+    /// Top-k sampling (0 = disabled).
+    pub top_k: u32,
+    /// Repetition penalty (1.0 = no penalty).
+    pub repeat_penalty: f32,
 }
 
 impl Default for SpwInferenceConfig {
@@ -280,6 +614,9 @@ impl Default for SpwInferenceConfig {
             n_gpu_layers: 99,
             max_tokens: 128,
             temperature: 0.7,
+            top_p: 0.9,
+            top_k: 40,
+            repeat_penalty: 1.1,
         }
     }
 }
@@ -358,6 +695,9 @@ impl SpwInferenceEngine {
         let gen_params = GenerationParams {
             max_tokens: config.max_tokens,
             temperature: config.temperature,
+            top_p: config.top_p,
+            top_k: config.top_k,
+            repeat_penalty: config.repeat_penalty,
             ..Default::default()
         };
 
@@ -393,6 +733,29 @@ impl SpwInferenceEngine {
             let mut guard = inner.lock().await;
             *guard = None;
         });
+    }
+
+    /// Cancels any in-progress interpretation.
+    ///
+    /// This will cause the current generation to stop at the next token
+    /// and return a cancellation error.
+    pub fn cancel(&self) {
+        let inner = self.inner.clone();
+        self.runtime.block_on(async move {
+            let guard = inner.lock().await;
+            if let Some(engine) = guard.as_ref() {
+                engine.cancel();
+            }
+        });
+    }
+
+    /// Returns whether a cancellation is pending.
+    pub fn is_cancelled(&self) -> bool {
+        let inner = self.inner.clone();
+        self.runtime.block_on(async move {
+            let guard = inner.lock().await;
+            guard.as_ref().map(|e| e.is_cancelled()).unwrap_or(false)
+        })
     }
 
     /// Returns the current engine status.
@@ -444,7 +807,7 @@ impl SpwInferenceEngine {
                 None
             } else {
                 // Create a simple natural language ground
-                Some(crate::ground::Ground::natural(&name, &name, &name))
+                Some(crate::ground::Ground::natural(&name, &name, &name, "", ""))
             }
         });
 
@@ -552,6 +915,12 @@ impl SpwInferenceEngine {
 
     pub fn unload_model(&self) {}
 
+    pub fn cancel(&self) {}
+
+    pub fn is_cancelled(&self) -> bool {
+        false
+    }
+
     pub fn get_status(&self) -> SpwEngineStatus {
         SpwEngineStatus {
             is_loaded: false,
@@ -642,5 +1011,58 @@ mod tests {
         assert!(config.use_gpu);
         assert_eq!(config.n_ctx, 2048);
         assert_eq!(config.max_tokens, 128);
+        assert!((config.temperature - 0.7).abs() < 0.01);
+        assert!((config.top_p - 0.9).abs() < 0.01);
+        assert_eq!(config.top_k, 40);
+        assert!((config.repeat_penalty - 1.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_validate_spw_ground() {
+        // Valid SPW
+        assert!(validate_spw_ground("@[work]".to_string()).is_none());
+        assert!(validate_spw_ground("&@".to_string()).is_none());
+
+        // Invalid SPW
+        assert!(validate_spw_ground("<unclosed".to_string()).is_some());
+        assert!(validate_spw_ground("".to_string()).is_some());
+    }
+
+    #[test]
+    fn test_spw_ground_conversion() {
+        // Natural ground
+        let natural = SpwGround {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            content_type: SpwGroundContentType::Natural,
+            content: "hello world".to_string(),
+            description: "Test desc".to_string(),
+            category: "Test".to_string(),
+        };
+        let ground = natural.to_ground().unwrap();
+        assert_eq!(ground.render(), "hello world");
+
+        // SPW ground
+        let spw = SpwGround {
+            id: "spw-test".to_string(),
+            name: "SPW Test".to_string(),
+            content_type: SpwGroundContentType::Spw,
+            content: "@[work]".to_string(),
+            description: "SPW desc".to_string(),
+            category: "Work".to_string(),
+        };
+        let ground = spw.to_ground().unwrap();
+        assert_eq!(ground.render(), "@[work]");
+
+        // Invalid SPW should error
+        let invalid = SpwGround {
+            id: "invalid".to_string(),
+            name: "Invalid".to_string(),
+            content_type: SpwGroundContentType::Spw,
+            content: "<unclosed".to_string(),
+            description: "".to_string(),
+            category: "".to_string(),
+        };
+        assert!(invalid.to_ground().is_err());
     }
 }

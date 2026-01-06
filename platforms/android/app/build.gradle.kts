@@ -165,14 +165,39 @@ tasks.register<Exec>("generateUniffiBindings") {
     }
 }
 
-// Make preBuild depend on Rust build for debug builds
-tasks.named("preBuild") {
+// Task to generate UniFFI bindings (debug mode - uses release Rust for bindgen)
+tasks.register<Exec>("generateUniffiBindingsDebug") {
+    description = "Generate UniFFI Kotlin bindings from Rust (for debug builds)"
+    workingDir = rustCrateDir
     dependsOn("buildRustDebug")
+
+    // Only run if .so is newer than generated bindings
+    inputs.file(jniLibsDir.resolve("arm64-v8a/libspweeboard_core.so"))
+    outputs.file(uniffiBindingsDir.resolve("spweeboard_core/spweeboard_core.kt"))
+
+    commandLine = listOf(
+        "cargo", "run", "--release",
+        "--features", "uniffi",
+        "--bin", "uniffi-bindgen",
+        "generate",
+        "--library", jniLibsDir.resolve("arm64-v8a/libspweeboard_core.so").absolutePath,
+        "--language", "kotlin",
+        "--out-dir", uniffiBindingsDir.parentFile.absolutePath
+    )
+
+    doFirst {
+        uniffiBindingsDir.mkdirs()
+    }
 }
 
-// For release builds, use release Rust build
+// Make preBuild depend on Rust build AND bindings generation for debug builds
+tasks.named("preBuild") {
+    dependsOn("generateUniffiBindingsDebug")
+}
+
+// For release builds, use release Rust build and generate bindings
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
-    dependsOn("buildRustRelease")
+    dependsOn("generateUniffiBindings")
 }
 
 dependencies {

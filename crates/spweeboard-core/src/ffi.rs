@@ -705,20 +705,23 @@ pub struct SpwInferenceEngine {
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl SpwInferenceEngine {
     /// Creates a new inference engine (model not yet loaded).
+    ///
+    /// # Errors
+    /// Returns error if the async runtime cannot be created (e.g., resource exhaustion).
     #[cfg_attr(feature = "uniffi", uniffi::constructor)]
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, SpwError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
-            .expect("Failed to create tokio runtime");
+            .map_err(|e| SpwError::Store { reason: format!("Failed to create runtime: {}", e) })?;
 
-        Self {
+        Ok(Self {
             inner: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             config: std::sync::Mutex::new(SpwInferenceConfig::default()),
             compiler: std::sync::Mutex::new(PromptCompiler::default()),
             runtime,
-        }
+        })
     }
 
     /// Loads a model from a GGUF file path.
@@ -1021,9 +1024,11 @@ impl SpwInferenceEngine {
 }
 
 #[cfg(feature = "llama")]
-impl Default for SpwInferenceEngine {
-    fn default() -> Self {
-        Self::new()
+impl SpwInferenceEngine {
+    /// Creates a new inference engine with default settings.
+    /// Panics if runtime creation fails - use `new()` for fallible construction.
+    pub fn default_or_panic() -> Self {
+        Self::new().expect("Failed to create inference engine")
     }
 }
 
@@ -1035,9 +1040,10 @@ pub struct SpwInferenceEngine;
 #[cfg(not(feature = "llama"))]
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl SpwInferenceEngine {
+    /// Creates a stub inference engine (LLM not available).
     #[cfg_attr(feature = "uniffi", uniffi::constructor)]
-    pub fn new() -> Self {
-        Self
+    pub fn new() -> Result<Self, SpwError> {
+        Ok(Self)
     }
 
     pub fn load_model(&self, _config: SpwInferenceConfig) -> SpwInferenceResult {
@@ -1095,9 +1101,10 @@ impl SpwInferenceEngine {
 }
 
 #[cfg(not(feature = "llama"))]
-impl Default for SpwInferenceEngine {
-    fn default() -> Self {
-        Self::new()
+impl SpwInferenceEngine {
+    /// Creates a stub inference engine with default settings.
+    pub fn default_or_panic() -> Self {
+        Self::new().expect("Failed to create inference engine")
     }
 }
 

@@ -37,3 +37,9 @@
 # Keep UniFFI callback interfaces
 -keep interface uniffi.** { *; }
 -keep class * implements uniffi.spweeboard_core.SpwStreamCallback { *; }
+
+# Strip verbose and debug logs in release builds
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

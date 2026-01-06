@@ -1252,7 +1252,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_spweeboard_core_checksum_constructor_spwgroundstore_open() != 19045.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new() != 38651.toShort()) {
+    if (lib.uniffi_spweeboard_core_checksum_constructor_spwinferenceengine_new() != 35284.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_spweeboard_core_checksum_method_spwstreamcallback_on_chunk() != 41674.toShort()) {
@@ -2532,10 +2532,13 @@ open class SpwInferenceEngine: Disposable, AutoCloseable, SpwInferenceEngineInte
     }
     /**
      * Creates a new inference engine (model not yet loaded).
+     *
+     * # Errors
+     * Returns error if the async runtime cannot be created (e.g., resource exhaustion).
      */
     constructor() :
         this(
-    uniffiRustCall() { _status ->
+    uniffiRustCallWithError(SpwException) { _status ->
     UniffiLib.INSTANCE.uniffi_spweeboard_core_fn_constructor_spwinferenceengine_new(
         _status)
 }
